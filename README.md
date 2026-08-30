@@ -50,7 +50,16 @@ The Android CI workflow asks the official `fosrl/newt` GitHub Releases API for t
 
 Executable Newt code is **not** downloaded into Android writable storage and executed from there.
 
-Production self-update requires the entire APK to be rebuilt and signed with the same Android release signing key. Never commit that key to this repository. Store it only as a protected GitHub Actions secret or in a dedicated signing service.
+Production self-update requires the entire APK to be rebuilt and signed with the same Android release signing key. The `Signed Newt Release` workflow checks Newt daily and publishes a new signed APK only when the embedded Newt version changes.
+
+For security, this workflow remains safely inactive until these repository Actions secrets exist:
+
+- `ANDROID_RELEASE_KEYSTORE_B64`
+- `ANDROID_RELEASE_STORE_PASSWORD`
+- `ANDROID_RELEASE_KEY_ALIAS`
+- `ANDROID_RELEASE_KEY_PASSWORD`
+
+Never commit the keystore or its passwords. Once configured, the app checks this repository's latest release, verifies SHA-256, then verifies that the candidate APK has exactly the same Android signing certificate as the installed app before opening the system installer.
 
 ## Pangolin setup
 
