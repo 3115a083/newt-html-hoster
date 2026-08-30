@@ -9,7 +9,8 @@ import android.database.Cursor
 import android.os.Build
 import android.provider.OpenableColumns
 import androidx.activity.ComponentActivity
-import androidx.activity.compose.rememberLauncherForActivityResult\nimport androidx.activity.compose.setContent
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -211,7 +212,9 @@ private fun SettingsDialog(
     var endpoint by remember { mutableStateOf("") }
     var id by remember { mutableStateOf("") }
     var secret by remember { mutableStateOf("") }
-    var status by remember { mutableStateOf<String?>(null) }\n    var release by remember { mutableStateOf<AppRelease?>(null) }\n    var updateStatus by remember { mutableStateOf<String?>(null) }
+    var status by remember { mutableStateOf<String?>(null) }
+    var release by remember { mutableStateOf<AppRelease?>(null) }
+    var updateStatus by remember { mutableStateOf<String?>(null) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
