@@ -1,4 +1,6 @@
-@file:OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)\n\npackage dev.newthoster.app
+@file:OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+
+package dev.newthoster.app
 
 import android.Manifest
 import android.app.UiModeManager
