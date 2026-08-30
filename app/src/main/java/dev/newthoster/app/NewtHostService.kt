@@ -14,6 +14,7 @@ import android.os.PowerManager
 import androidx.core.app.NotificationCompat
 import kotlinx.coroutines.flow.MutableStateFlow
 import java.io.BufferedReader
+import java.io.File
 import java.io.InputStreamReader
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
@@ -93,6 +94,9 @@ class NewtHostService : Service() {
                 pb.environment()["NEWT_SECRET"] = config.secret.concatToString()
                 pb.environment()["LOG_LEVEL"] = "INFO"
                 pb.environment()["USE_NATIVE_INTERFACE"] = "false"
+                pb.environment()["HOME"] = File(filesDir, "newt-runtime").apply { mkdirs() }.absolutePath
+                pb.environment()["HEALTH_FILE"] = File(filesDir, "newt-runtime/health").absolutePath
+                pb.environment()["SSL_CERT_DIR"] = "/system/etc/security/cacerts"
                 config.secret.fill('\u0000')
 
                 process = pb.start()
