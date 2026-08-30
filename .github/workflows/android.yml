@@ -28,16 +28,19 @@ jobs:
           gradle-version: "8.9"
       - name: Fetch Newt
         shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          TAG="$(curl -fsSL https://api.github.com/repos/fosrl/newt/releases/latest | jq -r '.tag_name')"
+          TAG="$(gh api repos/fosrl/newt/releases/latest --jq '.tag_name')"
           test -n "$TAG"
           test "$TAG" != "null"
-          mkdir -p app/src/main/jniLibs/arm64-v8a
-          mkdir -p app/src/main/jniLibs/x86_64
-          curl --proto '=https' --tlsv1.2 -fL "https://github.com/fosrl/newt/releases/download/$TAG/newt_linux_arm64" -o app/src/main/jniLibs/arm64-v8a/libnewt.so
-          curl --proto '=https' --tlsv1.2 -fL "https://github.com/fosrl/newt/releases/download/$TAG/newt_linux_amd64" -o app/src/main/jniLibs/x86_64/libnewt.so
+          mkdir -p app/src/main/jniLibs/arm64-v8a app/src/main/jniLibs/x86_64
+          BASE="https://github.com/fosrl/newt/releases/download/$TAG"
+          curl --retry 5 --retry-all-errors --connect-timeout 15 --proto '=https' --tlsv1.2 -fL "$BASE/newt_linux_arm64" -o app/src/main/jniLibs/arm64-v8a/libnewt.so
+          curl --retry 5 --retry-all-errors --connect-timeout 15 --proto '=https' --tlsv1.2 -fL "$BASE/newt_linux_amd64" -o app/src/main/jniLibs/x86_64/libnewt.so
           chmod 0755 app/src/main/jniLibs/arm64-v8a/libnewt.so app/src/main/jniLibs/x86_64/libnewt.so
+          app/src/main/jniLibs/x86_64/libnewt.so --version
           echo "$TAG" > newt-version.txt
           sha256sum app/src/main/jniLibs/arm64-v8a/libnewt.so app/src/main/jniLibs/x86_64/libnewt.so > newt-binaries.sha256
       - name: Assemble
