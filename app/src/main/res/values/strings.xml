@@ -45,4 +45,4 @@
     <string name="newt_version">Newt</string>
     <string name="back">Back</string>
     <string name="security_note">The server listens only on 127.0.0.1. Buckets are private app files and disabled buckets return 404.</string>
-</resources>
+    <string name="check_updates">Check for updates</string>\n    <string name="install_update">Install update</string>\n    <string name="no_update">No newer signed release found.</string>\n</resources>
