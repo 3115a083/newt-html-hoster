@@ -20,4 +20,5 @@ jobs:
       - uses: github/codeql-action/init@v3
         with:
           languages: java-kotlin
+          build-mode: none
       - uses: github/codeql-action/analyze@v3
