@@ -211,7 +211,7 @@ private fun SettingsDialog(
     var endpoint by remember { mutableStateOf("") }
     var id by remember { mutableStateOf("") }
     var secret by remember { mutableStateOf("") }
-    var status by remember { mutableStateOf<String?>(null) }
+    var status by remember { mutableStateOf<String?>(null) }\n    var release by remember { mutableStateOf<AppRelease?>(null) }\n    var updateStatus by remember { mutableStateOf<String?>(null) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
