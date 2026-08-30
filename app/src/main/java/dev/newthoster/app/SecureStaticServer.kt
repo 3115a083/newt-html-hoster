@@ -21,6 +21,9 @@ class SecureStaticServer(
     private var serverSocket: ServerSocket? = null
     private val pool = Executors.newFixedThreadPool(8)
     private val slots = Semaphore(24)
+    private val rateLock = Any()
+    private var rateWindowNanos = System.nanoTime()
+    private var requestsInWindow = 0
 
     fun start() {
         if (!running.compareAndSet(false, true)) return
@@ -29,6 +32,10 @@ class SecureStaticServer(
             while (running.get()) {
                 try {
                     val socket = serverSocket?.accept() ?: break
+                    if (!allowRequest()) {
+                        socket.use { writeStatus(it, 429, "Too Many Requests") }
+                        continue
+                    }
                     if (!slots.tryAcquire()) {
                         socket.use { writeStatus(it, 429, "Too Many Requests") }
                         continue
@@ -119,6 +126,17 @@ class SecureStaticServer(
             out.flush()
             store.addTraffic(bucketId, sent)
         }
+    }
+
+    private fun allowRequest(): Boolean = synchronized(rateLock) {
+        val now = System.nanoTime()
+        if (now - rateWindowNanos >= 1_000_000_000L) {
+            rateWindowNanos = now
+            requestsInWindow = 0
+        }
+        if (requestsInWindow >= 120) return@synchronized false
+        requestsInWindow++
+        true
     }
 
     private fun writeStatus(socket: Socket, code: Int, message: String) {
