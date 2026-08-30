@@ -45,4 +45,4 @@
     <string name="newt_version">Newt</string>
     <string name="back">Zurück</string>
     <string name="security_note">Der Server lauscht nur auf 127.0.0.1. Buckets liegen im privaten App-Speicher und deaktivierte Buckets liefern 404.</string>
-</resources>
+    <string name="check_updates">Nach Updates suchen</string>\n    <string name="install_update">Update installieren</string>\n    <string name="no_update">Kein neueres signiertes Release gefunden.</string>\n</resources>
