@@ -131,7 +131,7 @@ class NewtHostService : Service() {
 
     private fun sanitizeStatus(line: String): String {
         val redacted = line
-            .replace(Regex("(?i)(secret|token|authorization)[=: ]+[^ ]+"), "$1=[redacted]")
+            .replace(Regex("(?i)(secret|token|authorization)[=: ]+[^ ]+"), "\\$1=[redacted]")
             .replace(Regex("https://[^ ]+"), "HTTPS endpoint")
         return redacted.take(120)
     }
