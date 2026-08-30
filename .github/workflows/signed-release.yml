@@ -1,0 +1,101 @@
+name: Signed Newt Release
+
+"on":
+  workflow_dispatch:
+  schedule:
+    - cron: "23 5 * * *"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      GH_TOKEN: ${{ github.token }}
+      KEYSTORE_B64: ${{ secrets.ANDROID_RELEASE_KEYSTORE_B64 }}
+      STORE_PASSWORD: ${{ secrets.ANDROID_RELEASE_STORE_PASSWORD }}
+      KEY_ALIAS: ${{ secrets.ANDROID_RELEASE_KEY_ALIAS }}
+      KEY_PASSWORD: ${{ secrets.ANDROID_RELEASE_KEY_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check signing configuration
+        id: signing
+        shell: bash
+        run: |
+          if [[ -n "$KEYSTORE_B64" && -n "$STORE_PASSWORD" && -n "$KEY_ALIAS" && -n "$KEY_PASSWORD" ]]; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Release signing secrets are not configured. Automatic signed releases are disabled safely."
+          fi
+
+      - name: Check latest Newt
+        if: steps.signing.outputs.ready == 'true'
+        id: newt
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="$(gh api repos/fosrl/newt/releases/latest --jq '.tag_name')"
+          PREVIOUS="$(gh api repos/${GITHUB_REPOSITORY}/releases/latest --jq '.body' 2>/dev/null || true)"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          if grep -Fq "Embedded-Newt: $TAG" <<<"$PREVIOUS"; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/setup-java@v4
+        if: steps.newt.outputs.changed == 'true'
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: gradle/actions/setup-gradle@v4
+        if: steps.newt.outputs.changed == 'true'
+        with:
+          gradle-version: "8.9"
+
+      - name: Fetch official Newt
+        if: steps.newt.outputs.changed == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="${{ steps.newt.outputs.tag }}"
+          mkdir -p app/src/main/jniLibs/arm64-v8a app/src/main/jniLibs/x86_64
+          BASE="https://github.com/fosrl/newt/releases/download/$TAG"
+          curl --retry 5 --retry-all-errors --proto '=https' --tlsv1.2 -fL "$BASE/newt_linux_arm64" -o app/src/main/jniLibs/arm64-v8a/libnewt.so
+          curl --retry 5 --retry-all-errors --proto '=https' --tlsv1.2 -fL "$BASE/newt_linux_amd64" -o app/src/main/jniLibs/x86_64/libnewt.so
+          chmod 0755 app/src/main/jniLibs/*/libnewt.so
+          app/src/main/jniLibs/x86_64/libnewt.so --version
+
+      - name: Build signed APK
+        if: steps.newt.outputs.changed == 'true'
+        shell: bash
+        env:
+          ANDROID_RELEASE_KEYSTORE: ${{ runner.temp }}/release.jks
+          ANDROID_RELEASE_STORE_PASSWORD: ${{ secrets.ANDROID_RELEASE_STORE_PASSWORD }}
+          ANDROID_RELEASE_KEY_ALIAS: ${{ secrets.ANDROID_RELEASE_KEY_ALIAS }}
+          ANDROID_RELEASE_KEY_PASSWORD: ${{ secrets.ANDROID_RELEASE_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          printf '%s' "$KEYSTORE_B64" | base64 --decode > "$ANDROID_RELEASE_KEYSTORE"
+          chmod 0600 "$ANDROID_RELEASE_KEYSTORE"
+          VERSION="0.1.${GITHUB_RUN_NUMBER}"
+          gradle --no-daemon :app:assembleRelease -PappVersionCode="${GITHUB_RUN_NUMBER}" -PappVersionName="$VERSION"
+          cp app/build/outputs/apk/release/app-release.apk newt-html-hoster-release.apk
+          sha256sum newt-html-hoster-release.apk > newt-html-hoster-release.apk.sha256
+          echo "version=$VERSION" >> "$GITHUB_ENV"
+
+      - name: Publish signed release
+        if: steps.newt.outputs.changed == 'true'
+        shell: bash
+        run: |
+          gh release create "v$version"             newt-html-hoster-release.apk             newt-html-hoster-release.apk.sha256             --title "Newt HTML Hoster v$version"             --notes "Embedded-Newt: ${{ steps.newt.outputs.tag }}"
+
+      - name: Remove signing material
+        if: always()
+        shell: bash
+        run: rm -f "${RUNNER_TEMP}/release.jks"
