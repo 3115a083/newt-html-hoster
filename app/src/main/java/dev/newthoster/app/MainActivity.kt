@@ -39,6 +39,12 @@ import java.io.File
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: android.os.Bundle?) {
         super.onCreate(savedInstanceState)
+        val localePrefs = getSharedPreferences("ui_locale", Context.MODE_PRIVATE)
+        if (!localePrefs.getBoolean("initialized", false)) {
+            val language = if (Locale.getDefault().language.equals("de", ignoreCase = true)) "de" else "en"
+            AppCompatDelegate.setApplicationLocales(LocaleListCompat.forLanguageTags(language))
+            localePrefs.edit().putBoolean("initialized", true).apply()
+        }
         if (Build.VERSION.SDK_INT >= 33 && ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
             ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.POST_NOTIFICATIONS), 42)
         }
@@ -98,6 +104,11 @@ private fun MainScreen(
     var timer by remember { mutableStateOf("60") }
 
     fun refresh() { buckets = app.buckets.list(); selected = selected?.let { s -> buckets.firstOrNull { it.id == s.id } } }
+
+    LaunchedEffect(runtime.running, runtime.connected, runtime.linkMbps, runtime.remainingMinutes) {
+        buckets = app.buckets.list()
+        selected = selected?.let { s -> buckets.firstOrNull { it.id == s.id } }
+    }
 
     if (selected != null) {
         BucketDetail(selected!!, onBack = { selected = null; refresh() }, onChanged = { refresh() })
