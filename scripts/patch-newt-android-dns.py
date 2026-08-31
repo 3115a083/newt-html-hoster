@@ -10,19 +10,38 @@ client_text = client.read_text()
 
 marker = 'const writeDeadline = 10 * time.Second\n'
 helper = r'''
+func androidDNSServer() string {
+	raw := strings.TrimSpace(os.Getenv("DNS"))
+	host := raw
+	port := "53"
+
+	if h, p, err := net.SplitHostPort(raw); err == nil {
+		host = h
+		port = p
+	} else {
+		host = strings.Trim(raw, "[]")
+	}
+
+	ipHost := host
+	if i := strings.LastIndex(ipHost, "%"); i >= 0 {
+		ipHost = ipHost[:i]
+	}
+	ip := net.ParseIP(ipHost)
+	if ip == nil || ip.IsLoopback() || ip.IsUnspecified() || ip.IsMulticast() {
+		host = "9.9.9.9"
+		port = "53"
+	}
+
+	return net.JoinHostPort(host, port)
+}
+
 func androidDNSDialContext(ctx context.Context, network, address string) (net.Conn, error) {
-	dnsServer := strings.TrimSpace(os.Getenv("DNS"))
-	if dnsServer == "" {
-		dnsServer = "9.9.9.9"
-	}
-	if _, _, err := net.SplitHostPort(dnsServer); err != nil {
-		dnsServer = net.JoinHostPort(dnsServer, "53")
-	}
+	dnsServer := androidDNSServer()
 	resolver := &net.Resolver{
 		PreferGo: true,
-		Dial: func(ctx context.Context, _, _ string) (net.Conn, error) {
+		Dial: func(ctx context.Context, dnsNetwork, _ string) (net.Conn, error) {
 			d := net.Dialer{Timeout: 10 * time.Second}
-			return d.DialContext(ctx, "udp", dnsServer)
+			return d.DialContext(ctx, dnsNetwork, dnsServer)
 		},
 	}
 	d := net.Dialer{Timeout: 30 * time.Second, Resolver: resolver}
