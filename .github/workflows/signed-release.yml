@@ -70,6 +70,12 @@ jobs:
           set -euo pipefail
           TAG="${{ steps.newt.outputs.tag }}"
           git clone --depth 1 --branch "$TAG" https://github.com/fosrl/newt.git "${RUNNER_TEMP}/newt"
+          python3 scripts/patch-newt-android-dns.py "${RUNNER_TEMP}/newt"
+          (
+            cd "${RUNNER_TEMP}/newt"
+            gofmt -w websocket/client.go websocket/config.go
+            go test ./websocket
+          )
           mkdir -p app/src/main/jniLibs/arm64-v8a
           (
             cd "${RUNNER_TEMP}/newt"
@@ -101,7 +107,7 @@ jobs:
         if: steps.newt.outputs.changed == 'true'
         shell: bash
         run: |
-          gh release create "v$version"             newt-html-hoster-release.apk             newt-html-hoster-release.apk.sha256             --title "Newt HTML Hoster v$version"             --notes "Embedded-Newt: ${{ steps.newt.outputs.tag }}"
+          gh release create "v$version" newt-html-hoster-release.apk newt-html-hoster-release.apk.sha256 --title "Newt HTML Hoster v$version" --notes "Embedded-Newt: ${{ steps.newt.outputs.tag }}"
 
       - name: Remove signing material
         if: always()
