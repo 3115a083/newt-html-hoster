@@ -4,6 +4,7 @@ name: Android CI
   push:
     branches:
       - main
+  pull_request:
   workflow_dispatch:
 
 permissions:
