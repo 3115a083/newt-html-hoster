@@ -12,6 +12,7 @@
 <string name="connection_debug_note">Transient, automatically redacted Newt output only. Secrets, tokens and authorization data are removed.</string>
 <string name="connection_debug_empty">No diagnostic output yet.</string>
 <string name="close">Close</string>
+<string name="copy">Copy all</string>
 <string name="rename">Rename</string>
 <string name="rename_file">Rename file</string>
 <string name="file_name">File name</string>
