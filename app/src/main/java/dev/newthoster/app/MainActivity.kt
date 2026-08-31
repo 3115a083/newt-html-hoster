@@ -4,6 +4,8 @@ package dev.newthoster.app
 
 import android.Manifest
 import android.content.Context
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.database.Cursor
@@ -11,6 +13,11 @@ import android.os.Build
 import android.os.SystemClock
 import android.provider.OpenableColumns
 import android.widget.Toast
+import android.widget.EditText
+import android.graphics.Typeface
+import android.text.InputType
+import android.view.Gravity
+import android.view.inputmethod.EditorInfo
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -22,9 +29,6 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
@@ -40,6 +44,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -225,7 +230,12 @@ private fun Dashboard(
 
 @Composable
 private fun ConnectionHero(runtime: RuntimeState, gradient: List<Color>, timer: String, onTimer: () -> Unit, onDebug: () -> Unit) {
-    val status = when { runtime.connected -> stringResource(R.string.connected); runtime.running -> stringResource(R.string.connecting); else -> stringResource(R.string.disconnected) }
+    val status = when {
+        runtime.connected -> stringResource(R.string.connected)
+        runtime.running -> stringResource(R.string.connecting)
+        runtime.status != "Stopped" && runtime.status.isNotBlank() -> runtime.status
+        else -> stringResource(R.string.disconnected)
+    }
     Card(shape = RoundedCornerShape(30.dp), colors = CardDefaults.cardColors(containerColor = Color.Transparent), modifier = Modifier.fillMaxWidth()) {
         Column(
             Modifier.background(Brush.linearGradient(gradient)).padding(22.dp),
@@ -249,7 +259,7 @@ private fun ConnectionHero(runtime: RuntimeState, gradient: List<Color>, timer: 
                             color = Color.White,
                             style = MaterialTheme.typography.headlineMedium,
                             fontWeight = FontWeight.Bold,
-                            modifier = if (runtime.running && !runtime.connected) {
+                            modifier = if (!runtime.connected && (runtime.running || runtime.status != "Stopped")) {
                                 Modifier.combinedClickable(onClick = {}, onLongClick = onDebug)
                             } else Modifier
                         )
@@ -283,6 +293,7 @@ private fun BucketCard(bucket: Bucket, gradient: List<Color>, onClick: () -> Uni
     val context = LocalContext.current
     val app = context.applicationContext as HosterApp
     val files = remember(bucket.id, bucket.bytesServed) { app.buckets.files(bucket.id) }
+    val target = "127.0.0.1:${NewtHostService.PORT}/b/${bucket.id}/"
     ElevatedCard(onClick = onClick, shape = RoundedCornerShape(26.dp), modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -295,11 +306,24 @@ private fun BucketCard(bucket: Bucket, gradient: List<Color>, onClick: () -> Uni
             }
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 SoftMetric(stringResource(R.string.traffic), formatBytes(bucket.bytesServed), Modifier.weight(1f))
-                SoftMetric(stringResource(R.string.port), NewtHostService.PORT.toString(), Modifier.weight(1f))
+                SoftMetric(
+                    stringResource(R.string.port),
+                    NewtHostService.PORT.toString(),
+                    Modifier.weight(1f),
+                    onLongClick = { copyToClipboard(context, "port", NewtHostService.PORT.toString()) }
+                )
             }
             Column {
                 Text(stringResource(R.string.local_target), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Text("127.0.0.1:${NewtHostService.PORT}/b/${bucket.id}/", style = MaterialTheme.typography.bodySmall, fontFamily = FontFamily.Monospace)
+                Text(
+                    target,
+                    style = MaterialTheme.typography.bodySmall,
+                    fontFamily = FontFamily.Monospace,
+                    modifier = Modifier.combinedClickable(
+                        onClick = {},
+                        onLongClick = { copyToClipboard(context, "Pangolin target", target) }
+                    )
+                )
             }
             HorizontalDivider()
             Text(stringResource(R.string.assets), fontWeight = FontWeight.SemiBold)
@@ -317,8 +341,16 @@ private fun BucketCard(bucket: Bucket, gradient: List<Color>, onClick: () -> Uni
     }
 }
 
-@Composable private fun SoftMetric(label: String, value: String, modifier: Modifier = Modifier) {
-    Column(modifier.clip(RoundedCornerShape(18.dp)).background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha=.55f)).padding(12.dp)) {
+@Composable private fun SoftMetric(
+    label: String,
+    value: String,
+    modifier: Modifier = Modifier,
+    onLongClick: (() -> Unit)? = null
+) {
+    val interactionModifier = if (onLongClick != null) {
+        modifier.combinedClickable(onClick = {}, onLongClick = onLongClick)
+    } else modifier
+    Column(interactionModifier.clip(RoundedCornerShape(18.dp)).background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha=.55f)).padding(12.dp)) {
         Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Text(value, fontWeight = FontWeight.Bold)
     }
@@ -477,11 +509,10 @@ private fun BucketDetail(bucket: Bucket, gradient: List<Color>, onBack: () -> Un
         val rel = file.relativeTo(app.buckets.directory(bucket.id)).path
         FileEditorScreen(
             fileName = rel,
-            value = editText,
-            onValueChange = { editText = it },
+            initialValue = editText,
             onBack = { editing = null },
-            onSave = {
-                runCatching { app.buckets.writeText(bucket.id, rel, editText) }
+            onSave = { currentText ->
+                runCatching { app.buckets.writeText(bucket.id, rel, currentText) }
                     .onSuccess { editing = null; refresh() }
                     .onFailure { error = it.message }
             }
@@ -527,11 +558,25 @@ private fun BucketDetail(bucket: Bucket, gradient: List<Color>, onBack: () -> Un
                                 onChanged()
                             }
                         }
+                        val target = "127.0.0.1:${NewtHostService.PORT}/b/${bucket.id}/"
                         Text(
-                            "127.0.0.1:${NewtHostService.PORT}/b/${bucket.id}/",
+                            target,
                             color = Color.White.copy(alpha = .85f),
                             fontFamily = FontFamily.Monospace,
-                            style = MaterialTheme.typography.bodySmall
+                            style = MaterialTheme.typography.bodySmall,
+                            modifier = Modifier.combinedClickable(
+                                onClick = {},
+                                onLongClick = { copyToClipboard(context, "Pangolin target", target) }
+                            )
+                        )
+                        Text(
+                            "${stringResource(R.string.port)}: ${NewtHostService.PORT}",
+                            color = Color.White.copy(alpha = .85f),
+                            style = MaterialTheme.typography.bodySmall,
+                            modifier = Modifier.combinedClickable(
+                                onClick = {},
+                                onLongClick = { copyToClipboard(context, "port", NewtHostService.PORT.toString()) }
+                            )
                         )
                         Text("${stringResource(R.string.traffic)} · ${formatBytes(bucket.bytesServed)}", color = Color.White)
                     }
@@ -623,12 +668,13 @@ private fun BucketDetail(bucket: Bucket, gradient: List<Color>, onBack: () -> Un
 @Composable
 private fun FileEditorScreen(
     fileName: String,
-    value: String,
-    onValueChange: (String) -> Unit,
+    initialValue: String,
     onBack: () -> Unit,
-    onSave: () -> Unit
+    onSave: (String) -> Unit
 ) {
     BackHandler(onBack = onBack)
+    val editorRef = remember { arrayOfNulls<EditText>(1) }
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -644,7 +690,10 @@ private fun FileEditorScreen(
                     }
                 },
                 actions = {
-                    FilledTonalButton(onClick = onSave, shape = RoundedCornerShape(14.dp)) {
+                    FilledTonalButton(
+                        onClick = { editorRef[0]?.text?.toString()?.let(onSave) },
+                        shape = RoundedCornerShape(14.dp)
+                    ) {
                         Icon(Icons.Rounded.Save, null)
                         Spacer(Modifier.width(6.dp))
                         Text(stringResource(R.string.save))
@@ -665,18 +714,30 @@ private fun FileEditorScreen(
             shape = RoundedCornerShape(22.dp),
             color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = .48f)
         ) {
-            BasicTextField(
-                value = value,
-                onValueChange = onValueChange,
-                modifier = Modifier
-                    .fillMaxSize()
-                    .verticalScroll(rememberScrollState())
-                    .padding(16.dp),
-                textStyle = MaterialTheme.typography.bodyMedium.copy(
-                    color = MaterialTheme.colorScheme.onSurface,
-                    fontFamily = FontFamily.Monospace
-                ),
-                cursorBrush = androidx.compose.ui.graphics.SolidColor(MaterialTheme.colorScheme.primary)
+            AndroidView(
+                modifier = Modifier.fillMaxSize().padding(6.dp),
+                factory = { ctx ->
+                    EditText(ctx).apply {
+                        editorRef[0] = this
+                        setText(initialValue)
+                        setSelection(0)
+                        typeface = Typeface.MONOSPACE
+                        textSize = 14f
+                        gravity = Gravity.TOP or Gravity.START
+                        setPadding(14, 14, 14, 14)
+                        setHorizontallyScrolling(true)
+                        isSingleLine = false
+                        inputType = InputType.TYPE_CLASS_TEXT or
+                            InputType.TYPE_TEXT_FLAG_MULTI_LINE or
+                            InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS or
+                            InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD
+                        imeOptions = EditorInfo.IME_FLAG_NO_EXTRACT_UI or
+                            EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING
+                        setSelectAllOnFocus(false)
+                        isSaveEnabled = false
+                    }
+                },
+                update = { editorRef[0] = it }
             )
         }
     }
@@ -788,4 +849,13 @@ private fun formatBytes(bytes: Long): String {
     var v = bytes / 1024.0; var i = 0
     while (v >= 1024 && i < units.lastIndex) { v /= 1024; i++ }
     return "%.1f %s".format(v, units[i])
+}
+
+
+private fun copyToClipboard(context: Context, label: String, value: String) {
+    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+    clipboard.setPrimaryClip(ClipData.newPlainText(label, value))
+    if (Build.VERSION.SDK_INT <= 32) {
+        Toast.makeText(context, context.getString(R.string.copied), Toast.LENGTH_SHORT).show()
+    }
 }

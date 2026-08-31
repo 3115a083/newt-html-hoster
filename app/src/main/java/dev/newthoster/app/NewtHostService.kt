@@ -202,19 +202,20 @@ class NewtHostService : Service() {
     }
 
     private fun fail(message: String) {
-        RuntimeBus.state.value = RuntimeState(status = message)
+        RuntimeDebugBus.add("Connection failed: " + message)
+        RuntimeBus.state.value = RuntimeState(running = false, connected = false, status = message)
         updateNotification()
-        stopSelfRuntime()
+        stopSelfRuntime(resetState = false)
     }
 
     private fun stopRuntime() {
         if (!stopping.compareAndSet(false, true)) return
         RuntimeDebugBus.add("Stop requested")
-        worker.execute { stopSelfRuntime() }
+        worker.execute { stopSelfRuntime(resetState = true) }
     }
 
     @Synchronized
-    private fun stopSelfRuntime() {
+    private fun stopSelfRuntime(resetState: Boolean = true) {
         stopping.set(true)
         stopTask?.cancel(true)
         healthTask?.cancel(true)
@@ -230,7 +231,7 @@ class NewtHostService : Service() {
         if (wakeLock?.isHeld == true) wakeLock?.release()
         wakeLock = null
         File(filesDir, "newt-runtime/healthy").delete()
-        RuntimeBus.state.value = RuntimeState()
+        if (resetState) RuntimeBus.state.value = RuntimeState()
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()
     }

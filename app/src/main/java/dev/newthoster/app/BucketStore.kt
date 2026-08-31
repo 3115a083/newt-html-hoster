@@ -109,12 +109,18 @@ class BucketStore(private val context: Context) {
         val clean = sanitizeFileName(newName)
         require(clean.isNotBlank()) { "Invalid file name" }
         require(clean != "." && clean != "..") { "Invalid file name" }
-        val parentRelative = source.parentFile!!.relativeTo(directory(id)).path
-        val targetRelative = if (parentRelative == ".") clean else parentRelative + File.separator + clean
-        val target = resolveSafe(id, targetRelative)
+
+        val base = directory(id).canonicalFile
+        val parent = source.parentFile?.canonicalFile ?: error("Missing parent directory")
+        require(parent == base || parent.path.startsWith(base.path + File.separator)) { "Path traversal blocked" }
+
+        val target = File(parent, clean).canonicalFile
+        require(target.parentFile?.canonicalFile == parent) { "Path traversal blocked" }
+        require(target.path.startsWith(base.path + File.separator)) { "Path traversal blocked" }
+        require(target != source) { "File name unchanged" }
         require(!target.exists()) { "A file with this name already exists" }
         require(source.renameTo(target)) { "Could not rename file" }
-        return target.relativeTo(directory(id)).path
+        return target.relativeTo(base).path
     }
 
     fun readText(id: String, relativePath: String, maxBytes: Int = 2_000_000): String {
