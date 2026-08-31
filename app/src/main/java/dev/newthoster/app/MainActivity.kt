@@ -22,6 +22,9 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
@@ -453,55 +456,276 @@ private fun BucketDetail(bucket: Bucket, gradient: List<Color>, onBack: () -> Un
     var files by remember(bucket.id) { mutableStateOf(app.buckets.files(bucket.id)) }
     var editing by remember { mutableStateOf<File?>(null) }
     var editText by remember { mutableStateOf("") }
+    var renaming by remember { mutableStateOf<File?>(null) }
+    var deleting by remember { mutableStateOf<File?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
-    fun refresh() { files = app.buckets.files(bucket.id); onChanged() }
+
+    fun refresh() {
+        files = app.buckets.files(bucket.id)
+        onChanged()
+    }
 
     val importLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
-        uris.forEach { uri -> runCatching { app.buckets.import(bucket.id, uri, displayName(context, uri) ?: "asset") }.onFailure { error = it.message } }
+        uris.forEach { uri ->
+            runCatching { app.buckets.import(bucket.id, uri, displayName(context, uri) ?: "asset") }
+                .onFailure { error = it.message }
+        }
         refresh()
     }
 
+    editing?.let { file ->
+        val rel = file.relativeTo(app.buckets.directory(bucket.id)).path
+        FileEditorScreen(
+            fileName = rel,
+            value = editText,
+            onValueChange = { editText = it },
+            onBack = { editing = null },
+            onSave = {
+                runCatching { app.buckets.writeText(bucket.id, rel, editText) }
+                    .onSuccess { editing = null; refresh() }
+                    .onFailure { error = it.message }
+            }
+        )
+        return
+    }
+
     Scaffold(
-        topBar = { TopAppBar(title = { Text(bucket.name, fontWeight = FontWeight.Bold) }, navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, stringResource(R.string.back)) } }, colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent)) },
+        topBar = {
+            TopAppBar(
+                title = { Text(bucket.name, fontWeight = FontWeight.Bold) },
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(Icons.AutoMirrored.Rounded.ArrowBack, stringResource(R.string.back))
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent)
+            )
+        },
         containerColor = Color.Transparent
     ) { padding ->
-        LazyColumn(Modifier.fillMaxSize().padding(padding), contentPadding = PaddingValues(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        LazyColumn(
+            Modifier.fillMaxSize().padding(padding),
+            contentPadding = PaddingValues(18.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
             item {
                 Card(shape = RoundedCornerShape(26.dp), colors = CardDefaults.cardColors(containerColor = Color.Transparent)) {
-                    Column(Modifier.background(Brush.linearGradient(gradient)).padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) { Text(bucket.name, color = Color.White, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f)); SolidToggle(bucket.enabled, true) { app.buckets.toggle(bucket.id, it); onChanged() } }
-                        Text("127.0.0.1:${NewtHostService.PORT}/b/${bucket.id}/", color = Color.White.copy(alpha=.85f), fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.bodySmall)
+                    Column(
+                        Modifier.background(Brush.linearGradient(gradient)).padding(18.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                bucket.name,
+                                color = Color.White,
+                                style = MaterialTheme.typography.headlineSmall,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.weight(1f)
+                            )
+                            SolidToggle(bucket.enabled, true) {
+                                app.buckets.toggle(bucket.id, it)
+                                onChanged()
+                            }
+                        }
+                        Text(
+                            "127.0.0.1:${NewtHostService.PORT}/b/${bucket.id}/",
+                            color = Color.White.copy(alpha = .85f),
+                            fontFamily = FontFamily.Monospace,
+                            style = MaterialTheme.typography.bodySmall
+                        )
                         Text("${stringResource(R.string.traffic)} · ${formatBytes(bucket.bytesServed)}", color = Color.White)
                     }
                 }
             }
             item {
-                Button(onClick = { importLauncher.launch(arrayOf("*/*")) }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp)) { Icon(Icons.Rounded.UploadFile, null); Spacer(Modifier.width(8.dp)); Text(stringResource(R.string.import_assets)) }
+                Button(
+                    onClick = { importLauncher.launch(arrayOf("*/*")) },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(18.dp)
+                ) {
+                    Icon(Icons.Rounded.UploadFile, null)
+                    Spacer(Modifier.width(8.dp))
+                    Text(stringResource(R.string.import_assets))
+                }
                 error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
             }
             items(files, key = { it.absolutePath }) { file ->
                 val rel = file.relativeTo(app.buckets.directory(bucket.id)).path
                 ElevatedCard(shape = RoundedCornerShape(20.dp), modifier = Modifier.fillMaxWidth()) {
                     Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Rounded.Description, null, tint = MaterialTheme.colorScheme.primary); Spacer(Modifier.width(10.dp))
-                        Column(Modifier.weight(1f)) { Text(rel, fontWeight = FontWeight.SemiBold); Text(formatBytes(file.length()), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
-                        if (file.extension.lowercase() in setOf("html","htm","css","js","mjs","csv","txt","json","md")) {
-                            IconButton(onClick = { runCatching { app.buckets.readText(bucket.id, rel) }.onSuccess { editText = it; editing = file }.onFailure { error = it.message } }) { Icon(Icons.Rounded.Edit, stringResource(R.string.edit)) }
+                        Icon(Icons.Rounded.Description, null, tint = MaterialTheme.colorScheme.primary)
+                        Spacer(Modifier.width(10.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text(rel, fontWeight = FontWeight.SemiBold)
+                            Text(
+                                formatBytes(file.length()),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        if (file.extension.lowercase() in setOf("html", "htm", "css", "js", "mjs", "csv", "txt", "json", "md")) {
+                            IconButton(onClick = {
+                                runCatching { app.buckets.readText(bucket.id, rel) }
+                                    .onSuccess { editText = it; editing = file }
+                                    .onFailure { error = it.message }
+                            }) {
+                                Icon(Icons.Rounded.Edit, stringResource(R.string.edit))
+                            }
+                        }
+                        IconButton(onClick = { renaming = file }) {
+                            Icon(Icons.Rounded.DriveFileRenameOutline, stringResource(R.string.rename))
+                        }
+                        IconButton(onClick = { deleting = file }) {
+                            Icon(Icons.Rounded.DeleteOutline, stringResource(R.string.delete_file))
                         }
                     }
                 }
             }
-            item { OutlinedButton(onClick = { app.buckets.delete(bucket.id); onBack() }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp)) { Text(stringResource(R.string.delete)) } }
+            item {
+                OutlinedButton(
+                    onClick = { app.buckets.delete(bucket.id); onBack() },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(18.dp)
+                ) {
+                    Text(stringResource(R.string.delete_bucket))
+                }
+            }
         }
     }
 
-    if (editing != null) {
-        val rel = editing!!.relativeTo(app.buckets.directory(bucket.id)).path
-        AlertDialog(onDismissRequest = { editing = null }, shape = RoundedCornerShape(28.dp), title = { Text(rel) },
-            text = { OutlinedTextField(editText, { editText = it }, modifier = Modifier.fillMaxWidth().height(360.dp), textStyle = LocalTextStyle.current.copy(fontFamily = FontFamily.Monospace), shape = RoundedCornerShape(18.dp)) },
-            confirmButton = { Button(onClick = { runCatching { app.buckets.writeText(bucket.id, rel, editText) }.onFailure { error = it.message }; editing = null; refresh() }) { Text(stringResource(R.string.save)) } },
-            dismissButton = { TextButton(onClick = { editing = null }) { Text(stringResource(R.string.cancel)) } })
+    renaming?.let { file ->
+        val rel = file.relativeTo(app.buckets.directory(bucket.id)).path
+        RenameFileDialog(
+            currentName = file.name,
+            onDismiss = { renaming = null },
+            onRename = { newName ->
+                runCatching { app.buckets.renameFile(bucket.id, rel, newName) }
+                    .onSuccess { renaming = null; refresh() }
+                    .onFailure { error = it.message }
+            }
+        )
     }
+
+    deleting?.let { file ->
+        val rel = file.relativeTo(app.buckets.directory(bucket.id)).path
+        DeleteFileDialog(
+            fileName = rel,
+            onDismiss = { deleting = null },
+            onDelete = {
+                runCatching { app.buckets.deleteFile(bucket.id, rel) }
+                    .onSuccess { deleting = null; refresh() }
+                    .onFailure { error = it.message }
+            }
+        )
+    }
+}
+
+@Composable
+private fun FileEditorScreen(
+    fileName: String,
+    value: String,
+    onValueChange: (String) -> Unit,
+    onBack: () -> Unit,
+    onSave: () -> Unit
+) {
+    BackHandler(onBack = onBack)
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = {
+                    Column {
+                        Text(stringResource(R.string.editor), fontWeight = FontWeight.Bold)
+                        Text(fileName, style = MaterialTheme.typography.labelSmall, fontFamily = FontFamily.Monospace, maxLines = 1)
+                    }
+                },
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(Icons.AutoMirrored.Rounded.ArrowBack, stringResource(R.string.back))
+                    }
+                },
+                actions = {
+                    FilledTonalButton(onClick = onSave, shape = RoundedCornerShape(14.dp)) {
+                        Icon(Icons.Rounded.Save, null)
+                        Spacer(Modifier.width(6.dp))
+                        Text(stringResource(R.string.save))
+                    }
+                    Spacer(Modifier.width(8.dp))
+                },
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent)
+            )
+        },
+        containerColor = Color.Transparent
+    ) { padding ->
+        Surface(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+                .padding(horizontal = 12.dp, vertical = 8.dp)
+                .imePadding(),
+            shape = RoundedCornerShape(22.dp),
+            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = .48f)
+        ) {
+            BasicTextField(
+                value = value,
+                onValueChange = onValueChange,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .verticalScroll(rememberScrollState())
+                    .padding(16.dp),
+                textStyle = MaterialTheme.typography.bodyMedium.copy(
+                    color = MaterialTheme.colorScheme.onSurface,
+                    fontFamily = FontFamily.Monospace
+                ),
+                cursorBrush = androidx.compose.ui.graphics.SolidColor(MaterialTheme.colorScheme.primary)
+            )
+        }
+    }
+}
+
+@Composable
+private fun RenameFileDialog(currentName: String, onDismiss: () -> Unit, onRename: (String) -> Unit) {
+    var name by remember(currentName) { mutableStateOf(currentName) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        shape = RoundedCornerShape(28.dp),
+        icon = { Icon(Icons.Rounded.DriveFileRenameOutline, null) },
+        title = { Text(stringResource(R.string.rename_file)) },
+        text = {
+            OutlinedTextField(
+                value = name,
+                onValueChange = { name = it.take(120) },
+                label = { Text(stringResource(R.string.file_name)) },
+                singleLine = true,
+                shape = RoundedCornerShape(18.dp)
+            )
+        },
+        confirmButton = {
+            Button(onClick = { onRename(name) }, enabled = name.isNotBlank() && name != currentName) {
+                Text(stringResource(R.string.rename))
+            }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) } }
+    )
+}
+
+@Composable
+private fun DeleteFileDialog(fileName: String, onDismiss: () -> Unit, onDelete: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        shape = RoundedCornerShape(28.dp),
+        icon = { Icon(Icons.Rounded.DeleteOutline, null, tint = MaterialTheme.colorScheme.error) },
+        title = { Text(stringResource(R.string.delete_file)) },
+        text = { Text(stringResource(R.string.delete_file_confirm, fileName)) },
+        confirmButton = {
+            Button(
+                onClick = onDelete,
+                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+            ) {
+                Text(stringResource(R.string.delete))
+            }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) } }
+    )
 }
 
 @Composable
