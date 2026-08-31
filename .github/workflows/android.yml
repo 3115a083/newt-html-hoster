@@ -41,6 +41,12 @@ jobs:
           test -n "$TAG"
           test "$TAG" != "null"
           git clone --depth 1 --branch "$TAG" https://github.com/fosrl/newt.git "${RUNNER_TEMP}/newt"
+          python3 scripts/patch-newt-android-dns.py "${RUNNER_TEMP}/newt"
+          (
+            cd "${RUNNER_TEMP}/newt"
+            gofmt -w websocket/client.go websocket/config.go
+            go test ./websocket
+          )
           mkdir -p app/src/main/jniLibs/arm64-v8a
           (
             cd "${RUNNER_TEMP}/newt"
