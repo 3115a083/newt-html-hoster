@@ -12,6 +12,7 @@
 <string name="connection_debug_note">Nur flüchtige, automatisch bereinigte Newt-Ausgaben. Secrets, Token und Authorization-Daten werden entfernt.</string>
 <string name="connection_debug_empty">Noch keine Diagnoseausgabe.</string>
 <string name="close">Schließen</string>
+<string name="copy">Alles kopieren</string>
 <string name="rename">Umbenennen</string>
 <string name="rename_file">Datei umbenennen</string>
 <string name="file_name">Dateiname</string>
