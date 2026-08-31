@@ -41,6 +41,7 @@ jobs:
           test -n "$TAG"
           test "$TAG" != "null"
           git clone --depth 1 --branch "$TAG" https://github.com/fosrl/newt.git "${RUNNER_TEMP}/newt"
+          cp build-support/newt/android_dns_override.go "${RUNNER_TEMP}/newt/android_dns_override.go"
           mkdir -p app/src/main/jniLibs/arm64-v8a
           (
             cd "${RUNNER_TEMP}/newt"
