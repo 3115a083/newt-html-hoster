@@ -96,6 +96,27 @@ class BucketStore(private val context: Context) {
         }
     }
 
+    fun deleteFile(id: String, relativePath: String) {
+        val file = resolveSafe(id, relativePath)
+        require(file.isFile) { "File not found" }
+        require(file.delete()) { "Could not delete file" }
+        cleanupEmptyParents(id, file.parentFile)
+    }
+
+    fun renameFile(id: String, relativePath: String, newName: String): String {
+        val source = resolveSafe(id, relativePath)
+        require(source.isFile) { "File not found" }
+        val clean = sanitizeFileName(newName)
+        require(clean.isNotBlank()) { "Invalid file name" }
+        require(clean != "." && clean != "..") { "Invalid file name" }
+        val parentRelative = source.parentFile!!.relativeTo(directory(id)).path
+        val targetRelative = if (parentRelative == ".") clean else parentRelative + File.separator + clean
+        val target = resolveSafe(id, targetRelative)
+        require(!target.exists()) { "A file with this name already exists" }
+        require(source.renameTo(target)) { "Could not rename file" }
+        return target.relativeTo(directory(id)).path
+    }
+
     fun readText(id: String, relativePath: String, maxBytes: Int = 2_000_000): String {
         val file = resolveSafe(id, relativePath)
         require(file.isFile) { "File not found" }
@@ -160,6 +181,18 @@ class BucketStore(private val context: Context) {
             })
         }
         prefs.edit().putString("items", arr.toString()).apply()
+    }
+
+    private fun cleanupEmptyParents(id: String, start: File?) {
+        val base = directory(id).canonicalFile
+        var current = start?.canonicalFile
+        while (current != null && current != base && current.path.startsWith(base.path + File.separator)) {
+            val children = current.listFiles()
+            if (children != null && children.isEmpty()) {
+                if (!current.delete()) break
+                current = current.parentFile?.canonicalFile
+            } else break
+        }
     }
 
     private fun sanitizeFileName(name: String): String =
