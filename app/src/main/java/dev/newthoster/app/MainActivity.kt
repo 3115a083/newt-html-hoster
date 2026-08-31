@@ -791,6 +791,8 @@ private fun DeleteFileDialog(fileName: String, onDismiss: () -> Unit, onDelete: 
 
 @Composable
 private fun DebugDialog(lines: List<String>, onDismiss: () -> Unit) {
+    val context = LocalContext.current
+    val logText = lines.joinToString("\n")
     AlertDialog(
         onDismissRequest = onDismiss,
         shape = RoundedCornerShape(28.dp),
@@ -804,13 +806,25 @@ private fun DebugDialog(lines: List<String>, onDismiss: () -> Unit) {
                     shape = RoundedCornerShape(18.dp),
                     color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = .6f)
                 ) {
-                    LazyColumn(contentPadding = PaddingValues(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        if (lines.isEmpty()) item { Text(stringResource(R.string.connection_debug_empty), fontFamily = FontFamily.Monospace) }
-                        else items(lines) { line ->
-                            Text(line, style = MaterialTheme.typography.bodySmall, fontFamily = FontFamily.Monospace)
-                        }
+                    androidx.compose.foundation.text.selection.SelectionContainer {
+                        Text(
+                            if (logText.isBlank()) stringResource(R.string.connection_debug_empty) else logText,
+                            modifier = Modifier.fillMaxWidth().padding(12.dp),
+                            style = MaterialTheme.typography.bodySmall,
+                            fontFamily = FontFamily.Monospace
+                        )
                     }
                 }
+            }
+        },
+        dismissButton = {
+            TextButton(
+                onClick = { copyToClipboard(context, "Connection debug log", logText) },
+                enabled = logText.isNotBlank()
+            ) {
+                Icon(Icons.Rounded.ContentCopy, null)
+                Spacer(Modifier.width(6.dp))
+                Text(stringResource(R.string.copy))
             }
         },
         confirmButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.close)) } }
