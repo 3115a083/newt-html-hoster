@@ -1,48 +1,11 @@
 <resources>
-    <string name="app_name">Newt HTML Hoster</string>
-    <string name="stop">Stoppen</string>
-    <string name="title">Newt HTML Hoster</string>
-    <string name="subtitle">Temporäres statisches Hosting über Pangolin</string>
-    <string name="runtime">Laufzeit</string>
-    <string name="connected">Verbunden</string>
-    <string name="disconnected">Gestoppt</string>
-    <string name="start_hosting">Hosting starten</string>
-    <string name="stop_hosting">Hosting stoppen</string>
-    <string name="timer_minutes">Timer in Minuten</string>
-    <string name="buckets">Buckets</string>
-    <string name="new_bucket">Neuer Bucket</string>
-    <string name="bucket_name">Bucket-Name</string>
-    <string name="create">Anlegen</string>
-    <string name="cancel">Abbrechen</string>
-    <string name="settings">Einstellungen</string>
-    <string name="pangolin_endpoint">Pangolin-HTTPS-Endpunkt</string>
-    <string name="newt_id">Newt-ID</string>
-    <string name="newt_secret">Newt-Secret</string>
-    <string name="save_credentials">Speichern und Zertifikat pinnen</string>
-    <string name="credentials_saved">Zugangsdaten gesichert. Das Secret ist nicht mehr auslesbar.</string>
-    <string name="replace_credentials">Zugangsdaten ersetzen</string>
-    <string name="theme">Farbschema</string>
-    <string name="dynamic">Material You</string>
-    <string name="ocean">Ozean</string>
-    <string name="forest">Wald</string>
-    <string name="sunset">Sonnenuntergang</string>
-    <string name="appearance">Darstellung</string>
-    <string name="system">System</string>
-    <string name="light">Hell</string>
-    <string name="dark">Dunkel</string>
-    <string name="language">Sprache</string>
-    <string name="english">English</string>
-    <string name="german">Deutsch</string>
-    <string name="assets">Dateien</string>
-    <string name="import_assets">Dateien importieren</string>
-    <string name="edit">Bearbeiten</string>
-    <string name="save">Speichern</string>
-    <string name="delete">Löschen</string>
-    <string name="enabled">Aktiv</string>
-    <string name="traffic">Traffic</string>
-    <string name="path">Pfad</string>
-    <string name="link_strength">Verbindung</string>
-    <string name="newt_version">Newt</string>
-    <string name="back">Zurück</string>
-    <string name="security_note">Der Server lauscht nur auf 127.0.0.1. Buckets liegen im privaten App-Speicher und deaktivierte Buckets liefern 404.</string>
-    <string name="check_updates">Nach Updates suchen</string>\n    <string name="install_update">Update installieren</string>\n    <string name="no_update">Kein neueres signiertes Release gefunden.</string>\n</resources>
+<string name="app_name">Newt HTML Hoster</string><string name="stop">Stoppen</string><string name="title">Newt HTML Hoster</string><string name="subtitle">Temporäres statisches Hosting über Pangolin</string>
+<string name="runtime">Verbindung</string><string name="connected">Verbunden</string><string name="disconnected">Getrennt</string><string name="connecting">Verbindet</string><string name="start_hosting">Verbinden</string><string name="stop_hosting">Trennen</string>
+<string name="timer_minutes">Timer in Minuten</string><string name="timer">Timer</string><string name="buckets">Buckets</string><string name="new_bucket">Neuer Bucket</string><string name="bucket_name">Bucket-Name</string><string name="create">Anlegen</string><string name="cancel">Abbrechen</string>
+<string name="settings">Einstellungen</string><string name="pangolin_endpoint">Pangolin-HTTPS-Endpunkt</string><string name="newt_id">Newt-ID</string><string name="newt_secret">Newt-Secret</string><string name="save_credentials">Speichern und Zertifikat pinnen</string><string name="credentials_saved">Zugangsdaten gesichert. Das Secret ist nicht mehr auslesbar.</string><string name="replace_credentials">Zugangsdaten ersetzen</string>
+<string name="theme">Farbdesign</string><string name="dynamic">Material You</string><string name="ocean">Ozean</string><string name="forest">Wald</string><string name="sunset">Sonnenuntergang</string><string name="aurora">Aurora</string><string name="lavender">Lavendel</string><string name="graphite">Graphit</string>
+<string name="appearance">Darstellung</string><string name="system">Automatisch</string><string name="light">Hell</string><string name="dark">Dunkel</string><string name="language">Sprache</string><string name="english">English</string><string name="german">Deutsch</string>
+<string name="assets">Bucket-Inhalte</string><string name="import_assets">Dateien importieren</string><string name="edit">Bearbeiten</string><string name="save">Speichern</string><string name="delete">Löschen</string><string name="enabled">Aktiv</string><string name="traffic">Traffic</string><string name="path">Pfad</string><string name="port">Pangolin-Zielport</string><string name="local_target">Lokales Ziel</string><string name="link_strength">Signal</string><string name="newt_version">Newt</string><string name="back">Zurück</string>
+<string name="security_note">Der Server lauscht nur auf 127.0.0.1. Buckets liegen im privaten App-Speicher und deaktivierte Buckets liefern 404.</string><string name="check_updates">Nach Updates suchen</string><string name="install_update">Update installieren</string><string name="no_update">Kein neueres signiertes Release gefunden.</string>
+<string name="files_count">%1$d Dateien</string><string name="empty_bucket">Dieser Bucket enthält noch keine Dateien</string><string name="add_bucket">Bucket hinzufügen</string><string name="double_back_exit">Zum Schließen erneut Zurück drücken</string><string name="connection_setup">Verbindung</string><string name="personalization">Personalisierung</string>
+</resources>
