@@ -7,24 +7,24 @@ import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.net.ConnectivityManager
-import android.net.NetworkCapabilities
 import android.os.Build
 import android.os.IBinder
 import android.os.PowerManager
 import androidx.core.app.NotificationCompat
 import kotlinx.coroutines.flow.MutableStateFlow
-import java.io.BufferedReader
 import java.io.File
-import java.io.InputStreamReader
 import java.util.concurrent.Executors
+import java.util.concurrent.ScheduledFuture
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 
 data class RuntimeState(
     val running: Boolean = false,
     val connected: Boolean = false,
     val status: String = "Stopped",
     val newtVersion: String = "unknown",
-    val linkMbps: Int = 0
+    val linkMbps: Int = 0,
+    val remainingMinutes: Long? = null
 )
 
 object RuntimeBus {
@@ -44,8 +44,12 @@ class NewtHostService : Service() {
     private var process: Process? = null
     private var server: SecureStaticServer? = null
     private var wakeLock: PowerManager.WakeLock? = null
-    private val executor = Executors.newSingleThreadExecutor()
-    @Volatile private var stopping = false
+    private val worker = Executors.newSingleThreadExecutor()
+    private val scheduler = Executors.newSingleThreadScheduledExecutor()
+    private var stopTask: ScheduledFuture<*>? = null
+    private var healthTask: ScheduledFuture<*>? = null
+    private var deadlineMillis: Long = 0L
+    private val stopping = AtomicBoolean(false)
 
     override fun onCreate() {
         super.onCreate()
@@ -58,18 +62,22 @@ class NewtHostService : Service() {
             ACTION_START -> {
                 val minutes = intent.getLongExtra(EXTRA_MINUTES, 60L).coerceIn(1L, 10080L)
                 startForeground(NOTIFICATION_ID, notification("Starting Newt…"))
-                if (process == null) startRuntime(minutes)
+                if (process == null && !RuntimeBus.state.value.running) startRuntime(minutes)
             }
         }
         return START_NOT_STICKY
     }
 
     private fun startRuntime(minutes: Long) {
-        executor.execute {
-            stopping = false
-            RuntimeBus.state.value = RuntimeBus.state.value.copy(running = true, status = "Starting")
+        worker.execute {
+            stopping.set(false)
+            deadlineMillis = System.currentTimeMillis() + TimeUnit.MINUTES.toMillis(minutes)
+            RuntimeBus.state.value = RuntimeState(running = true, status = "Starting", remainingMinutes = minutes)
             val app = application as HosterApp
-            val config = app.vault.load()
+            val config = runCatching { app.vault.load() }.getOrElse {
+                fail("Credential vault error")
+                return@execute
+            }
             if (config == null) {
                 fail("Missing Newt credentials")
                 return@execute
@@ -77,67 +85,85 @@ class NewtHostService : Service() {
 
             try {
                 val currentPin = TlsPin.fetchSpkiSha256(config.endpoint)
-                if (config.certPinSha256 != null && currentPin != config.certPinSha256) {
-                    config.secret.fill('\u0000')
+                if (currentPin != config.certPinSha256) {
                     fail("TLS pin mismatch")
                     return@execute
                 }
 
+                val runtimeDir = File(filesDir, "newt-runtime").apply { mkdirs() }
+                val healthFile = File(runtimeDir, "healthy").apply { delete() }
                 server = SecureStaticServer(app.buckets, PORT).also { it.start() }
                 acquireWakeLock()
 
-                val binary = applicationInfo.nativeLibraryDir + "/libnewt.so"
-                val pb = ProcessBuilder(binary)
+                val binary = File(applicationInfo.nativeLibraryDir, "libnewt.so")
+                require(binary.isFile) { "Newt runtime missing" }
+
+                val pb = ProcessBuilder(binary.absolutePath)
                 pb.redirectErrorStream(true)
-                pb.environment()["PANGOLIN_ENDPOINT"] = config.endpoint
-                pb.environment()["NEWT_ID"] = config.newtId
-                pb.environment()["NEWT_SECRET"] = config.secret.concatToString()
-                pb.environment()["LOG_LEVEL"] = "INFO"
-                pb.environment()["USE_NATIVE_INTERFACE"] = "false"
-                pb.environment()["HOME"] = File(filesDir, "newt-runtime").apply { mkdirs() }.absolutePath
-                pb.environment()["HEALTH_FILE"] = File(filesDir, "newt-runtime/health").absolutePath
-                pb.environment()["SSL_CERT_DIR"] = "/system/etc/security/cacerts"
-                config.secret.fill('\u0000')
+                val env = pb.environment()
+                env["PANGOLIN_ENDPOINT"] = config.endpoint
+                env["NEWT_ID"] = config.newtId
+                env["NEWT_SECRET"] = config.secret.concatToString()
+                env["LOG_LEVEL"] = "WARN"
+                env["USE_NATIVE_INTERFACE"] = "false"
+                env["HOME"] = runtimeDir.absolutePath
+                env["HEALTH_FILE"] = healthFile.absolutePath
+                env["SSL_CERT_DIR"] = "/system/etc/security/cacerts"
 
-                process = pb.start()
-                val version = runCatching {
-                    ProcessBuilder(binary, "--version").redirectErrorStream(true).start().inputStream.bufferedReader().readLine() ?: "unknown"
-                }.getOrDefault("unknown")
-                RuntimeBus.state.value = RuntimeBus.state.value.copy(newtVersion = version)
-
-                Thread {
-                    try {
-                        TimeUnit.MINUTES.sleep(minutes)
-                        if (!stopping) stopSelfRuntime()
-                    } catch (_: InterruptedException) {}
-                }.start()
-
-                BufferedReader(InputStreamReader(process!!.inputStream)).useLines { lines ->
-                    lines.forEach { line ->
-                        val lower = line.lowercase()
-                        val connected = lower.contains("websocket connected") || lower.contains("tunnel connection to server established")
-                        val state = RuntimeBus.state.value
-                        RuntimeBus.state.value = state.copy(
-                            connected = state.connected || connected,
-                            status = if (state.connected || connected) "Connected" else sanitizeStatus(line),
-                            linkMbps = linkSpeed()
-                        )
-                        updateNotification()
-                    }
+                process = try {
+                    pb.start()
+                } finally {
+                    config.wipe()
+                    env.remove("NEWT_SECRET")
+                    env.remove("NEWT_ID")
+                    env.remove("PANGOLIN_ENDPOINT")
                 }
+
+                val version = runCatching {
+                    ProcessBuilder(binary.absolutePath, "--version")
+                        .redirectErrorStream(true)
+                        .start()
+                        .inputStream.bufferedReader()
+                        .use { it.readLine() ?: "unknown" }
+                }.getOrDefault("unknown")
+                RuntimeBus.state.value = RuntimeBus.state.value.copy(newtVersion = version, status = "Connecting")
+                updateNotification()
+
+                stopTask = scheduler.schedule({ if (!stopping.get()) stopRuntime() }, minutes, TimeUnit.MINUTES)
+                healthTask = scheduler.scheduleAtFixedRate({
+                    val procAlive = process?.isAlive == true
+                    val connected = procAlive && healthFile.isFile
+                    val remaining = ((deadlineMillis - System.currentTimeMillis()).coerceAtLeast(0L) + 59_999L) / 60_000L
+                    RuntimeBus.state.value = RuntimeBus.state.value.copy(
+                        running = procAlive,
+                        connected = connected,
+                        status = when {
+                            !procAlive -> "Stopped"
+                            connected -> "Connected"
+                            else -> "Connecting"
+                        },
+                        linkMbps = linkSpeed(),
+                        remainingMinutes = remaining
+                    )
+                    updateNotification()
+                }, 0, 2, TimeUnit.SECONDS)
+
+                process!!.inputStream.use { input ->
+                    val buffer = ByteArray(8192)
+                    while (process?.isAlive == true && !stopping.get()) {
+                        val n = input.read(buffer)
+                        if (n < 0) break
+                    }
+                    buffer.fill(0)
+                }
+
                 val exit = process?.waitFor() ?: -1
-                if (!stopping && exit != 0) fail("Newt exited with code $exit") else stopSelfRuntime()
+                if (!stopping.get() && exit != 0) fail("Newt stopped unexpectedly") else stopSelfRuntime()
             } catch (t: Throwable) {
-                fail(t.message ?: t.javaClass.simpleName)
+                config.wipe()
+                fail(t.message?.take(100) ?: t.javaClass.simpleName)
             }
         }
-    }
-
-    private fun sanitizeStatus(line: String): String {
-        val redacted = line
-            .replace(Regex("(?i)(secret|token|authorization)[=: ]+[^ ]+"), "\\$1=[redacted]")
-            .replace(Regex("https://[^ ]+"), "HTTPS endpoint")
-        return redacted.take(120)
     }
 
     private fun linkSpeed(): Int {
@@ -161,12 +187,17 @@ class NewtHostService : Service() {
     }
 
     private fun stopRuntime() {
-        stopping = true
-        executor.execute { stopSelfRuntime() }
+        if (!stopping.compareAndSet(false, true)) return
+        worker.execute { stopSelfRuntime() }
     }
 
+    @Synchronized
     private fun stopSelfRuntime() {
-        stopping = true
+        stopping.set(true)
+        stopTask?.cancel(true)
+        healthTask?.cancel(true)
+        stopTask = null
+        healthTask = null
         runCatching { process?.destroy() }
         runCatching {
             if (process?.waitFor(2, TimeUnit.SECONDS) == false) process?.destroyForcibly()
@@ -176,6 +207,7 @@ class NewtHostService : Service() {
         server = null
         if (wakeLock?.isHeld == true) wakeLock?.release()
         wakeLock = null
+        File(filesDir, "newt-runtime/healthy").delete()
         RuntimeBus.state.value = RuntimeState()
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()
@@ -196,14 +228,17 @@ class NewtHostService : Service() {
             .setContentText(text)
             .setContentIntent(open)
             .setOngoing(true)
+            .setOnlyAlertOnce(true)
             .addAction(0, getString(R.string.stop), stop)
             .build()
     }
 
     private fun updateNotification() {
         val state = RuntimeBus.state.value
-        val text = if (state.connected) "Newt connected · ${state.linkMbps} Mbps link" else state.status
-        (getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager).notify(NOTIFICATION_ID, notification(text))
+        val remaining = state.remainingMinutes?.let { " · ${it} min" }.orEmpty()
+        val text = if (state.connected) "Newt connected · ${state.linkMbps} Mbps$remaining" else state.status + remaining
+        (getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager)
+            .notify(NOTIFICATION_ID, notification(text))
     }
 
     private fun createChannel() {
@@ -214,8 +249,13 @@ class NewtHostService : Service() {
     }
 
     override fun onDestroy() {
-        if (!stopping) stopSelfRuntime()
-        executor.shutdownNow()
+        stopTask?.cancel(true)
+        healthTask?.cancel(true)
+        runCatching { process?.destroyForcibly() }
+        runCatching { server?.stop() }
+        if (wakeLock?.isHeld == true) runCatching { wakeLock?.release() }
+        worker.shutdownNow()
+        scheduler.shutdownNow()
         super.onDestroy()
     }
 
