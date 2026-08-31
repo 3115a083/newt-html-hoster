@@ -41,16 +41,16 @@ jobs:
           test -n "$TAG"
           test "$TAG" != "null"
           git clone --depth 1 --branch "$TAG" https://github.com/fosrl/newt.git "${RUNNER_TEMP}/newt"
-          mkdir -p app/src/main/jniLibs/arm64-v8a app/src/main/jniLibs/x86_64
+          mkdir -p app/src/main/jniLibs/arm64-v8a
           (
             cd "${RUNNER_TEMP}/newt"
             CGO_ENABLED=0 GOOS=android GOARCH=arm64 go build -trimpath -ldflags="-s -w" -o "$GITHUB_WORKSPACE/app/src/main/jniLibs/arm64-v8a/libnewt.so" .
             CGO_ENABLED=0 GOOS=android GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o "$GITHUB_WORKSPACE/app/src/main/jniLibs/x86_64/libnewt.so" .
           )
-          chmod 0755 app/src/main/jniLibs/arm64-v8a/libnewt.so app/src/main/jniLibs/x86_64/libnewt.so
-          file app/src/main/jniLibs/arm64-v8a/libnewt.so app/src/main/jniLibs/x86_64/libnewt.so
+          chmod 0755 app/src/main/jniLibs/arm64-v8a/libnewt.so
+          file app/src/main/jniLibs/arm64-v8a/libnewt.so
           echo "$TAG" > newt-version.txt
-          sha256sum app/src/main/jniLibs/arm64-v8a/libnewt.so app/src/main/jniLibs/x86_64/libnewt.so > newt-binaries.sha256
+          sha256sum app/src/main/jniLibs/arm64-v8a/libnewt.so > newt-binaries.sha256
       - name: Assemble
         run: gradle --no-daemon :app:assembleDebug
       - name: Upload APK
