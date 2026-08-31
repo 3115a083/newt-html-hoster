@@ -1,4 +1,4 @@
-@file:OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+@file:OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class, androidx.compose.foundation.ExperimentalFoundationApi::class)
 
 package dev.newthoster.app
 
@@ -19,6 +19,7 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -125,11 +126,13 @@ private fun MainScreen(
     val context = LocalContext.current
     val app = context.applicationContext as HosterApp
     val runtime by RuntimeBus.state.collectAsStateWithLifecycle()
+    val debugLines by RuntimeDebugBus.lines.collectAsStateWithLifecycle()
     var buckets by remember { mutableStateOf(app.buckets.list()) }
     var selected by remember { mutableStateOf<Bucket?>(null) }
     var page by remember { mutableStateOf(Page.HOME) }
     var showCreate by remember { mutableStateOf(false) }
     var showTimer by remember { mutableStateOf(false) }
+    var showDebug by remember { mutableStateOf(false) }
     var timer by remember { mutableStateOf("60") }
     var lastBack by remember { mutableLongStateOf(0L) }
 
@@ -158,6 +161,7 @@ private fun MainScreen(
             runtime = runtime, buckets = buckets, gradient = gradient, timer = timer,
             onSettings = { page = Page.SETTINGS },
             onTimer = { showTimer = true },
+            onDebug = { showDebug = true },
             onToggleRuntime = { enabled ->
                 if (enabled) {
                     val mins = timer.toLongOrNull()?.coerceIn(1, 10080) ?: 60
@@ -172,13 +176,14 @@ private fun MainScreen(
     }
 
     if (showTimer) TimerDialog(timer, { timer = it }, { showTimer = false })
+    if (showDebug) DebugDialog(debugLines, onDismiss = { showDebug = false })
     if (showCreate) CreateBucketDialog(onDismiss = { showCreate = false }, onCreate = { app.buckets.create(it); refresh(); showCreate = false })
 }
 
 @Composable
 private fun Dashboard(
     runtime: RuntimeState, buckets: List<Bucket>, gradient: List<Color>, timer: String,
-    onSettings: () -> Unit, onTimer: () -> Unit, onToggleRuntime: (Boolean) -> Unit,
+    onSettings: () -> Unit, onTimer: () -> Unit, onDebug: () -> Unit, onToggleRuntime: (Boolean) -> Unit,
     onToggleBucket: (Bucket, Boolean) -> Unit, onBucket: (Bucket) -> Unit, onCreate: () -> Unit, hasSecret: Boolean
 ) {
     Scaffold(containerColor = Color.Transparent) { padding ->
@@ -197,7 +202,7 @@ private fun Dashboard(
                     SolidToggle(runtime.running, enabled = runtime.running || hasSecret, onCheckedChange = onToggleRuntime)
                 }
             }
-            item { ConnectionHero(runtime, gradient, timer, onTimer) }
+            item { ConnectionHero(runtime, gradient, timer, onTimer, onDebug) }
             item {
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
@@ -216,7 +221,7 @@ private fun Dashboard(
 }
 
 @Composable
-private fun ConnectionHero(runtime: RuntimeState, gradient: List<Color>, timer: String, onTimer: () -> Unit) {
+private fun ConnectionHero(runtime: RuntimeState, gradient: List<Color>, timer: String, onTimer: () -> Unit, onDebug: () -> Unit) {
     val status = when { runtime.connected -> stringResource(R.string.connected); runtime.running -> stringResource(R.string.connecting); else -> stringResource(R.string.disconnected) }
     Card(shape = RoundedCornerShape(30.dp), colors = CardDefaults.cardColors(containerColor = Color.Transparent), modifier = Modifier.fillMaxWidth()) {
         Column(
@@ -226,7 +231,26 @@ private fun ConnectionHero(runtime: RuntimeState, gradient: List<Color>, timer: 
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text(stringResource(R.string.runtime), color = Color.White.copy(alpha=.78f), style = MaterialTheme.typography.labelLarge)
-                    Text(status, color = Color.White, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        if (runtime.running && !runtime.connected) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(22.dp),
+                                strokeWidth = 2.5.dp,
+                                color = Color.White,
+                                trackColor = Color.White.copy(alpha = .24f)
+                            )
+                            Spacer(Modifier.width(10.dp))
+                        }
+                        Text(
+                            status,
+                            color = Color.White,
+                            style = MaterialTheme.typography.headlineMedium,
+                            fontWeight = FontWeight.Bold,
+                            modifier = if (runtime.running && !runtime.connected) {
+                                Modifier.combinedClickable(onClick = {}, onLongClick = onDebug)
+                            } else Modifier
+                        )
+                    }
                 }
                 Surface(shape = CircleShape, color = Color.White.copy(alpha=.18f)) {
                     Icon(if (runtime.connected) Icons.Rounded.Wifi else Icons.Rounded.WifiOff, null, tint = Color.White, modifier = Modifier.padding(14.dp).size(26.dp))
@@ -478,6 +502,34 @@ private fun BucketDetail(bucket: Bucket, gradient: List<Color>, onBack: () -> Un
             confirmButton = { Button(onClick = { runCatching { app.buckets.writeText(bucket.id, rel, editText) }.onFailure { error = it.message }; editing = null; refresh() }) { Text(stringResource(R.string.save)) } },
             dismissButton = { TextButton(onClick = { editing = null }) { Text(stringResource(R.string.cancel)) } })
     }
+}
+
+@Composable
+private fun DebugDialog(lines: List<String>, onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        shape = RoundedCornerShape(28.dp),
+        icon = { Icon(Icons.Rounded.BugReport, null) },
+        title = { Text(stringResource(R.string.connection_debug)) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(stringResource(R.string.connection_debug_note), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Surface(
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 220.dp, max = 440.dp),
+                    shape = RoundedCornerShape(18.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = .6f)
+                ) {
+                    LazyColumn(contentPadding = PaddingValues(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        if (lines.isEmpty()) item { Text(stringResource(R.string.connection_debug_empty), fontFamily = FontFamily.Monospace) }
+                        else items(lines) { line ->
+                            Text(line, style = MaterialTheme.typography.bodySmall, fontFamily = FontFamily.Monospace)
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.close)) } }
+    )
 }
 
 @Composable

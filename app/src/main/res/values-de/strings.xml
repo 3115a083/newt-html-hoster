@@ -8,4 +8,8 @@
 <string name="assets">Bucket-Inhalte</string><string name="import_assets">Dateien importieren</string><string name="edit">Bearbeiten</string><string name="save">Speichern</string><string name="delete">Löschen</string><string name="enabled">Aktiv</string><string name="traffic">Traffic</string><string name="path">Pfad</string><string name="port">Pangolin-Zielport</string><string name="local_target">Lokales Ziel</string><string name="link_strength">Signal</string><string name="newt_version">Newt</string><string name="back">Zurück</string>
 <string name="security_note">Der Server lauscht nur auf 127.0.0.1. Buckets liegen im privaten App-Speicher und deaktivierte Buckets liefern 404.</string><string name="check_updates">Nach Updates suchen</string><string name="install_update">Update installieren</string><string name="no_update">Kein neueres signiertes Release gefunden.</string>
 <string name="files_count">%1$d Dateien</string><string name="empty_bucket">Dieser Bucket enthält noch keine Dateien</string><string name="add_bucket">Bucket hinzufügen</string><string name="double_back_exit">Zum Schließen erneut Zurück drücken</string><string name="connection_setup">Verbindung</string><string name="personalization">Personalisierung</string>
+<string name="connection_debug">Verbindungs-Debug</string>
+<string name="connection_debug_note">Nur flüchtige, automatisch bereinigte Newt-Ausgaben. Secrets, Token und Authorization-Daten werden entfernt.</string>
+<string name="connection_debug_empty">Noch keine Diagnoseausgabe.</string>
+<string name="close">Schließen</string>
 </resources>

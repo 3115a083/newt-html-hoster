@@ -8,4 +8,8 @@
 <string name="assets">Bucket contents</string><string name="import_assets">Import assets</string><string name="edit">Edit</string><string name="save">Save</string><string name="delete">Delete</string><string name="enabled">Enabled</string><string name="traffic">Traffic</string><string name="path">Path</string><string name="port">Pangolin target port</string><string name="local_target">Local target</string><string name="link_strength">Signal</string><string name="newt_version">Newt</string><string name="back">Back</string>
 <string name="security_note">The server listens only on 127.0.0.1. Buckets are private app files and disabled buckets return 404.</string><string name="check_updates">Check for updates</string><string name="install_update">Install update</string><string name="no_update">No newer signed release found.</string>
 <string name="files_count">%1$d files</string><string name="empty_bucket">No files in this bucket</string><string name="add_bucket">Add bucket</string><string name="double_back_exit">Press back again to close</string><string name="connection_setup">Connection setup</string><string name="personalization">Personalization</string>
+<string name="connection_debug">Connection debug</string>
+<string name="connection_debug_note">Transient, automatically redacted Newt output only. Secrets, tokens and authorization data are removed.</string>
+<string name="connection_debug_empty">No diagnostic output yet.</string>
+<string name="close">Close</string>
 </resources>
