@@ -95,6 +95,11 @@ class NewtHostService : Service() {
                     fail("TLS pin mismatch")
                     return@execute
                 }
+                if (stopping.get()) {
+                    config.wipe()
+                    stopSelfRuntime()
+                    return@execute
+                }
 
                 RuntimeDebugBus.add("TLS pin verified")
                 val runtimeDir = File(filesDir, "newt-runtime").apply { mkdirs() }
@@ -117,9 +122,19 @@ class NewtHostService : Service() {
                 env["HOME"] = runtimeDir.absolutePath
                 env["HEALTH_FILE"] = healthFile.absolutePath
                 env["SSL_CERT_DIR"] = "/system/etc/security/cacerts"
-                currentDnsServer()?.let { dns ->
+                val dns = currentDnsServer()
+                if (dns != null) {
                     env["DNS"] = dns
                     RuntimeDebugBus.add("Using Android DNS server: " + dns)
+                } else {
+                    env.remove("DNS")
+                    RuntimeDebugBus.add("No usable Android DNS server; using Newt default DNS")
+                }
+
+                if (stopping.get()) {
+                    config.wipe()
+                    stopSelfRuntime()
+                    return@execute
                 }
 
                 process = try {
@@ -175,8 +190,12 @@ class NewtHostService : Service() {
                 if (!stopping.get() && exit != 0) fail("Newt stopped unexpectedly") else stopSelfRuntime()
             } catch (t: Throwable) {
                 config.wipe()
-                RuntimeDebugBus.add("Runtime error: " + t.javaClass.simpleName + ": " + (t.message ?: ""))
-                fail(t.message?.take(100) ?: t.javaClass.simpleName)
+                if (stopping.get()) {
+                    stopSelfRuntime()
+                } else {
+                    RuntimeDebugBus.add("Runtime error: " + t.javaClass.simpleName + ": " + (t.message ?: ""))
+                    fail(t.message?.take(100) ?: t.javaClass.simpleName)
+                }
             }
         }
     }
@@ -184,7 +203,13 @@ class NewtHostService : Service() {
     private fun currentDnsServer(): String? {
         val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
         val network = cm.activeNetwork ?: return null
-        return cm.getLinkProperties(network)?.dnsServers?.firstOrNull()?.hostAddress
+        return cm.getLinkProperties(network)?.dnsServers
+            ?.firstOrNull { address ->
+                !address.isLoopbackAddress &&
+                    !address.isAnyLocalAddress &&
+                    !address.isMulticastAddress
+            }
+            ?.hostAddress
     }
 
     private fun linkSpeed(): Int {
@@ -211,7 +236,10 @@ class NewtHostService : Service() {
     private fun stopRuntime() {
         if (!stopping.compareAndSet(false, true)) return
         RuntimeDebugBus.add("Stop requested")
-        worker.execute { stopSelfRuntime(resetState = true) }
+        stopTask?.cancel(true)
+        healthTask?.cancel(true)
+        runCatching { process?.destroy() }
+        scheduler.execute { stopSelfRuntime(resetState = true) }
     }
 
     @Synchronized
