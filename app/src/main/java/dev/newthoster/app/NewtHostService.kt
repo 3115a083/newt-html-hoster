@@ -71,25 +71,32 @@ class NewtHostService : Service() {
     private fun startRuntime(minutes: Long) {
         worker.execute {
             stopping.set(false)
+            RuntimeDebugBus.clear()
+            RuntimeDebugBus.add("Starting Newt runtime")
             deadlineMillis = System.currentTimeMillis() + TimeUnit.MINUTES.toMillis(minutes)
             RuntimeBus.state.value = RuntimeState(running = true, status = "Starting", remainingMinutes = minutes)
             val app = application as HosterApp
             val config = runCatching { app.vault.load() }.getOrElse {
+                RuntimeDebugBus.add("Credential vault error: " + it.javaClass.simpleName)
                 fail("Credential vault error")
                 return@execute
             }
             if (config == null) {
+                RuntimeDebugBus.add("No Newt credentials configured")
                 fail("Missing Newt credentials")
                 return@execute
             }
 
             try {
+                RuntimeDebugBus.add("Verifying Pangolin TLS certificate and stored SPKI pin")
                 val currentPin = TlsPin.fetchSpkiSha256(config.endpoint)
                 if (currentPin != config.certPinSha256) {
+                    RuntimeDebugBus.add("TLS pin mismatch. Connection aborted.")
                     fail("TLS pin mismatch")
                     return@execute
                 }
 
+                RuntimeDebugBus.add("TLS pin verified")
                 val runtimeDir = File(filesDir, "newt-runtime").apply { mkdirs() }
                 val healthFile = File(runtimeDir, "healthy").apply { delete() }
                 server = SecureStaticServer(app.buckets, PORT).also { it.start() }
@@ -97,6 +104,7 @@ class NewtHostService : Service() {
 
                 val binary = File(applicationInfo.nativeLibraryDir, "libnewt.so")
                 require(binary.isFile) { "Newt runtime missing" }
+                RuntimeDebugBus.add("Newt executable prepared")
 
                 val pb = ProcessBuilder(binary.absolutePath)
                 pb.redirectErrorStream(true)
@@ -104,11 +112,15 @@ class NewtHostService : Service() {
                 env["PANGOLIN_ENDPOINT"] = config.endpoint
                 env["NEWT_ID"] = config.newtId
                 env["NEWT_SECRET"] = config.secret.concatToString()
-                env["LOG_LEVEL"] = "WARN"
+                env["LOG_LEVEL"] = "DEBUG"
                 env["USE_NATIVE_INTERFACE"] = "false"
                 env["HOME"] = runtimeDir.absolutePath
                 env["HEALTH_FILE"] = healthFile.absolutePath
                 env["SSL_CERT_DIR"] = "/system/etc/security/cacerts"
+                currentDnsServer()?.let { dns ->
+                    env["DNS"] = dns
+                    RuntimeDebugBus.add("Using Android DNS server: " + dns)
+                }
 
                 process = try {
                     pb.start()
@@ -119,6 +131,7 @@ class NewtHostService : Service() {
                     env.remove("PANGOLIN_ENDPOINT")
                 }
 
+                RuntimeDebugBus.add("Newt process started")
                 val version = runCatching {
                     ProcessBuilder(binary.absolutePath, "--version")
                         .redirectErrorStream(true)
@@ -126,6 +139,7 @@ class NewtHostService : Service() {
                         .inputStream.bufferedReader()
                         .use { it.readLine() ?: "unknown" }
                 }.getOrDefault("unknown")
+                RuntimeDebugBus.add("Embedded " + version)
                 RuntimeBus.state.value = RuntimeBus.state.value.copy(newtVersion = version, status = "Connecting")
                 updateNotification()
 
@@ -134,7 +148,9 @@ class NewtHostService : Service() {
                     val procAlive = process?.isAlive == true
                     val connected = procAlive && healthFile.isFile
                     val remaining = ((deadlineMillis - System.currentTimeMillis()).coerceAtLeast(0L) + 59_999L) / 60_000L
-                    RuntimeBus.state.value = RuntimeBus.state.value.copy(
+                    val previous = RuntimeBus.state.value
+                    if (connected && !previous.connected) RuntimeDebugBus.add("Tunnel health check reports connected")
+                    RuntimeBus.state.value = previous.copy(
                         running = procAlive,
                         connected = connected,
                         status = when {
@@ -148,22 +164,27 @@ class NewtHostService : Service() {
                     updateNotification()
                 }, 0, 2, TimeUnit.SECONDS)
 
-                process!!.inputStream.use { input ->
-                    val buffer = ByteArray(8192)
-                    while (process?.isAlive == true && !stopping.get()) {
-                        val n = input.read(buffer)
-                        if (n < 0) break
+                process!!.inputStream.bufferedReader().useLines { lines ->
+                    lines.forEach { line ->
+                        if (line.isNotBlank()) RuntimeDebugBus.add(line)
                     }
-                    buffer.fill(0)
                 }
 
                 val exit = process?.waitFor() ?: -1
+                RuntimeDebugBus.add("Newt process exited with code " + exit)
                 if (!stopping.get() && exit != 0) fail("Newt stopped unexpectedly") else stopSelfRuntime()
             } catch (t: Throwable) {
                 config.wipe()
+                RuntimeDebugBus.add("Runtime error: " + t.javaClass.simpleName + ": " + (t.message ?: ""))
                 fail(t.message?.take(100) ?: t.javaClass.simpleName)
             }
         }
+    }
+
+    private fun currentDnsServer(): String? {
+        val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+        val network = cm.activeNetwork ?: return null
+        return cm.getLinkProperties(network)?.dnsServers?.firstOrNull()?.hostAddress
     }
 
     private fun linkSpeed(): Int {
@@ -188,6 +209,7 @@ class NewtHostService : Service() {
 
     private fun stopRuntime() {
         if (!stopping.compareAndSet(false, true)) return
+        RuntimeDebugBus.add("Stop requested")
         worker.execute { stopSelfRuntime() }
     }
 
