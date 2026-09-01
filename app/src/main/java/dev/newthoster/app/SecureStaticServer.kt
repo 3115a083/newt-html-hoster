@@ -28,7 +28,7 @@ class SecureStaticServer(
 
     fun start() {
         if (!running.compareAndSet(false, true)) return
-        serverSocket = ServerSocket(port, 32, InetAddress.getLoopbackAddress())
+        serverSocket = ServerSocket(port, 32, InetAddress.getByName("127.0.0.1"))
         Thread({
             while (running.get()) {
                 try {
