@@ -21,4 +21,14 @@
 <string name="delete_file_confirm">Delete “%1$s”?</string>
 <string name="editor">Editor</string>
 <string name="copied">Copied</string>
+
+<string name="timer_off">Off</string>
+<string name="timer_explanation">Choose an explicit duration for this connection, or start without an automatic stop timer.</string>
+<string name="start_with_timer">Start with timer</string>
+<string name="no_timer">No timer</string>
+<string name="traffic_inspector">Traffic inspector</string>
+<string name="traffic_inspector_note">Hidden, opt-in diagnostics. Stored only in memory while enabled. Captures method, path, socket IP, proxy-reported IP and User-Agent. Cookies, authorization, query strings and bodies are not recorded. Reported client IP is trustworthy only if your proxy sets it.</string>
+<string name="enable_traffic_inspector">Enable detailed traffic capture</string>
+<string name="no_traffic_events">No captured requests.</string>
+<string name="clear">Clear</string>
 </resources>
