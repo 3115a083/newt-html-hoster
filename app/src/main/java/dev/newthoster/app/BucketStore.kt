@@ -210,7 +210,7 @@ class BucketStore(private val context: Context) {
 
     private fun isPortAvailable(port: Int): Boolean =
         runCatching {
-            ServerSocket(port, 1, InetAddress.getLoopbackAddress()).use { }
+            ServerSocket(port, 1, InetAddress.getByName("127.0.0.1")).use { }
             true
         }.getOrDefault(false)
 

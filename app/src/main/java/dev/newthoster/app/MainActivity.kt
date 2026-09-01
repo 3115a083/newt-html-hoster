@@ -260,10 +260,7 @@ private fun ConnectionHero(runtime: RuntimeState, gradient: List<Color>, timer: 
                             status,
                             color = Color.White,
                             style = MaterialTheme.typography.headlineMedium,
-                            fontWeight = FontWeight.Bold,
-                            modifier = if (!runtime.connected && (runtime.running || runtime.status != "Stopped")) {
-                                Modifier.combinedClickable(onClick = {}, onLongClick = onDebug)
-                            } else Modifier
+                            fontWeight = FontWeight.Bold
                         )
                     }
                 }
@@ -275,8 +272,25 @@ private fun ConnectionHero(runtime: RuntimeState, gradient: List<Color>, timer: 
                 GlassMetric(Icons.Rounded.Speed, stringResource(R.string.link_strength), if (runtime.linkMbps > 0) "${runtime.linkMbps} Mbps" else "—", Modifier.weight(1f))
                 GlassMetric(Icons.Rounded.Timer, stringResource(R.string.timer), runtime.remainingMinutes?.let { "$it min" } ?: "$timer min", Modifier.weight(1f))
             }
-            FilledTonalButton(onClick = onTimer, colors = ButtonDefaults.filledTonalButtonColors(containerColor = Color.White.copy(alpha=.18f), contentColor = Color.White)) {
-                Icon(Icons.Rounded.Timer, null); Spacer(Modifier.width(8.dp)); Text(stringResource(R.string.timer))
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                FilledTonalButton(
+                    onClick = onTimer,
+                    colors = ButtonDefaults.filledTonalButtonColors(containerColor = Color.White.copy(alpha=.18f), contentColor = Color.White),
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Icon(Icons.Rounded.Timer, null)
+                    Spacer(Modifier.width(8.dp))
+                    Text(stringResource(R.string.timer))
+                }
+                FilledTonalButton(
+                    onClick = onDebug,
+                    colors = ButtonDefaults.filledTonalButtonColors(containerColor = Color.White.copy(alpha=.18f), contentColor = Color.White),
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Icon(Icons.Rounded.BugReport, null)
+                    Spacer(Modifier.width(8.dp))
+                    Text(stringResource(R.string.connection_debug))
+                }
             }
         }
     }

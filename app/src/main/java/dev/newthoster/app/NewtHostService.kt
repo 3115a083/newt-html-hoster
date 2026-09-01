@@ -13,6 +13,8 @@ import android.os.PowerManager
 import androidx.core.app.NotificationCompat
 import kotlinx.coroutines.flow.MutableStateFlow
 import java.io.File
+import java.net.InetSocketAddress
+import java.net.Socket
 import java.util.concurrent.Executors
 import java.util.concurrent.ScheduledFuture
 import java.util.concurrent.TimeUnit
@@ -217,7 +219,16 @@ class NewtHostService : Service() {
             runCatching { server.start() }
                 .onSuccess {
                     servers[bucket.id] = server
-                    RuntimeDebugBus.add("Bucket " + bucket.name + " listening on 127.0.0.1:" + bucket.port)
+                    val reachable = runCatching {
+                        Socket().use { socket ->
+                            socket.connect(InetSocketAddress("127.0.0.1", bucket.port), 1_000)
+                        }
+                        true
+                    }.getOrDefault(false)
+                    RuntimeDebugBus.add(
+                        "Bucket " + bucket.name + " listening on 127.0.0.1:" + bucket.port +
+                            if (reachable) " (self-check OK)" else " (self-check FAILED)"
+                    )
                 }
                 .onFailure {
                     RuntimeDebugBus.add("Bucket server failed on port " + bucket.port + ": " + (it.message ?: it.javaClass.simpleName))
