@@ -69,17 +69,36 @@ class SecureStaticServer(
             if (method != "GET" && method != "HEAD") return writeStatus(s, 405, "Method Not Allowed")
 
             var headerBytes = requestLine.length
+            var userAgent: String? = null
+            var reportedIp: String? = null
             while (true) {
                 val line = reader.readLine() ?: return
                 headerBytes += line.length + 2
                 if (headerBytes > 16_384) return writeStatus(s, 431, "Request Header Fields Too Large")
                 if (line.isEmpty()) break
+                val separator = line.indexOf(':')
+                if (separator > 0) {
+                    val name = line.substring(0, separator).trim().lowercase()
+                    val value = line.substring(separator + 1).trim()
+                    when (name) {
+                        "user-agent" -> userAgent = value
+                        "x-forwarded-for", "x-real-ip", "cf-connecting-ip" -> if (reportedIp == null) reportedIp = value
+                    }
+                }
             }
 
             val pathOnly = parts[1].substringBefore('?')
             val decoded = runCatching { URLDecoder.decode(pathOnly, "UTF-8") }.getOrElse {
                 return writeStatus(s, 400, "Bad Request")
             }
+            TrafficInspectorBus.record(
+                bucketId = bucketId,
+                method = method,
+                path = decoded,
+                socketIp = s.inetAddress?.hostAddress ?: "unknown",
+                reportedIp = reportedIp,
+                userAgent = userAgent
+            )
             val bucket = store.list().firstOrNull { it.id == bucketId } ?: return writeStatus(s, 404, "Not Found")
             if (!bucket.enabled) return writeStatus(s, 404, "Not Found")
 
