@@ -48,7 +48,8 @@ object AppUpdater {
         require(release.apkUrl.startsWith(RELEASE_PREFIX)) { "Untrusted APK source" }
         require(release.sha256Url.startsWith(RELEASE_PREFIX)) { "Untrusted checksum source" }
 
-        val out = File(context.cacheDir, "newt-html-hoster-update.apk")
+        val updateDir = File(context.cacheDir, "updates").apply { mkdirs() }
+        val out = File(updateDir, "newt-html-hoster-update.apk")
         if (out.exists()) out.delete()
         try {
             val digest = MessageDigest.getInstance("SHA-256")
