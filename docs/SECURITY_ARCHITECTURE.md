@@ -2,7 +2,7 @@
 
 ## Data flow
 
-Internet -> HTTPS Pangolin endpoint -> Newt control channel -> userspace WireGuard/netstack tunnel -> Newt local proxy -> 127.0.0.1:8793 -> bucket server.
+Internet -> HTTPS Pangolin endpoint -> Newt control channel -> userspace WireGuard/netstack tunnel -> Newt local proxy -> 127.0.0.1:<bucket-port> -> bucket server.
 
 No Android listening socket is bound to Wi-Fi, cellular, or 0.0.0.0.
 
@@ -20,7 +20,7 @@ Newt itself still performs its own TLS validation. For highest assurance, deploy
 
 ## Buckets
 
-Each bucket is a UUID directory under the private app files directory. Canonical-path validation blocks ../ traversal and symlink escapes. Disabled buckets return 404. Assets can be replaced while hosting because each HTTP request resolves the current file contents.
+Each bucket is a UUID directory under the private app files directory and has a persistent loopback-only port. Canonical-path validation blocks ../ traversal and symlink escapes. Disabled buckets return 404. Assets can be replaced while hosting because each HTTP request resolves the current file contents.
 
 Only GET and HEAD are served. There is no CGI, PHP, Node runtime, shell execution, upload endpoint, directory listing, or server-side script engine.
 
@@ -30,10 +30,19 @@ HTML is active content. The server sends a restrictive CSP, disables framing, di
 
 ## Runtime lifecycle
 
-A user-visible foreground service runs only while Newt is requested. A partial wake lock is held only during that period. Stopping Newt tears down the child process, localhost server and wake lock. START_NOT_STICKY prevents Android from silently resurrecting the service after it is stopped.
+A user-visible foreground service runs only while Newt is requested. A partial wake lock is held only during that period. Stopping Newt tears down the child process, all per-bucket localhost servers and the wake lock. START_NOT_STICKY prevents Android from silently resurrecting the service after it is stopped.
 
 ## Update model
 
-GitHub Actions fetches the newest official fosrl/newt release binaries during builds and records SHA-256 values in the build artifact. Android executable code is never downloaded into writable app storage for direct execution.
+GitHub Actions builds the Android-targeted Newt runtime used by the app, including the repository Android compatibility patches, and then packages it into the APK. Android executable code is never downloaded into writable app storage for direct execution.
 
 Production updates must be delivered as a newly signed APK with the same application signing key. The signing key must never exist in the public repository.
+
+
+## Optional traffic diagnostics
+
+Detailed per-bucket request diagnostics are disabled by default and stored only in process memory while explicitly enabled. The inspector records a bounded ring of timestamp, method, path without query string, local socket peer IP, selected proxy-forwarded client-IP headers and User-Agent. It intentionally does not capture cookies, Authorization headers, request bodies or query strings.
+
+Forwarded client-IP headers are metadata supplied by the HTTP path and can be spoofed unless a trusted proxy overwrites them. They must not be treated as authenticated identity.
+
+The inspector is a troubleshooting feature, not an analytics or fingerprinting system.

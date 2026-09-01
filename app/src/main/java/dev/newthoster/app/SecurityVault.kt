@@ -8,6 +8,7 @@ import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.io.DataInputStream
 import java.io.DataOutputStream
+import java.net.URI
 import java.security.KeyStore
 import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
@@ -48,7 +49,11 @@ class SecurityVault(private val context: Context) {
 
     fun save(endpoint: String, newtId: String, secret: CharArray, certPinSha256: String) {
         val cleanEndpoint = endpoint.trim().trimEnd('/')
-        require(cleanEndpoint.startsWith("https://")) { "Pangolin endpoint must use HTTPS" }
+        val endpointUri = URI(cleanEndpoint)
+        require(endpointUri.scheme.equals("https", ignoreCase = true)) { "Pangolin endpoint must use HTTPS" }
+        require(!endpointUri.host.isNullOrBlank()) { "Pangolin endpoint host required" }
+        require(endpointUri.userInfo == null) { "Pangolin endpoint must not contain user info" }
+        require(endpointUri.fragment == null) { "Pangolin endpoint must not contain a fragment" }
         require(newtId.isNotBlank()) { "Newt ID required" }
         require(secret.isNotEmpty()) { "Newt secret required" }
         require(certPinSha256.startsWith("sha256/")) { "TLS pin required" }

@@ -61,7 +61,8 @@ class NewtHostService : Service() {
         when (intent?.action) {
             ACTION_STOP -> stopRuntime()
             ACTION_START -> {
-                val minutes = intent.getLongExtra(EXTRA_MINUTES, 60L).coerceIn(1L, 10080L)
+                val requestedMinutes = intent.getLongExtra(EXTRA_MINUTES, 0L)
+                val minutes = if (requestedMinutes <= 0L) null else requestedMinutes.coerceIn(1L, 10080L)
                 startForeground(NOTIFICATION_ID, notification("Starting Newt…"))
                 if (process == null && !RuntimeBus.state.value.running) startRuntime(minutes)
             }
@@ -69,12 +70,12 @@ class NewtHostService : Service() {
         return START_NOT_STICKY
     }
 
-    private fun startRuntime(minutes: Long) {
+    private fun startRuntime(minutes: Long?) {
         worker.execute {
             stopping.set(false)
             RuntimeDebugBus.clear()
             RuntimeDebugBus.add("Starting Newt runtime")
-            deadlineMillis = System.currentTimeMillis() + TimeUnit.MINUTES.toMillis(minutes)
+            deadlineMillis = minutes?.let { System.currentTimeMillis() + TimeUnit.MINUTES.toMillis(it) } ?: 0L
             RuntimeBus.state.value = RuntimeState(running = true, status = "Starting", remainingMinutes = minutes)
             val app = application as HosterApp
             val config = runCatching { app.vault.load() }.getOrElse {
@@ -159,12 +160,16 @@ class NewtHostService : Service() {
                 RuntimeBus.state.value = RuntimeBus.state.value.copy(newtVersion = version, status = "Connecting")
                 updateNotification()
 
-                stopTask = scheduler.schedule({ if (!stopping.get()) stopRuntime() }, minutes, TimeUnit.MINUTES)
+                stopTask = minutes?.let { duration ->
+                    scheduler.schedule({ if (!stopping.get()) stopRuntime() }, duration, TimeUnit.MINUTES)
+                }
                 healthTask = scheduler.scheduleAtFixedRate({
                     syncBucketServers(app.buckets)
                     val procAlive = process?.isAlive == true
                     val connected = procAlive && healthFile.isFile
-                    val remaining = ((deadlineMillis - System.currentTimeMillis()).coerceAtLeast(0L) + 59_999L) / 60_000L
+                    val remaining = if (deadlineMillis > 0L) {
+                        ((deadlineMillis - System.currentTimeMillis()).coerceAtLeast(0L) + 59_999L) / 60_000L
+                    } else null
                     val previous = RuntimeBus.state.value
                     if (connected && !previous.connected) RuntimeDebugBus.add("Tunnel health check reports connected")
                     RuntimeBus.state.value = previous.copy(
