@@ -143,7 +143,8 @@ private fun MainScreen(
     var showCreate by remember { mutableStateOf(false) }
     var showTimer by remember { mutableStateOf(false) }
     var showDebug by remember { mutableStateOf(false) }
-    var timer by remember { mutableStateOf("60") }
+    var timer by remember { mutableStateOf<String?>(null) }
+    var pendingStart by remember { mutableStateOf(false) }
     var lastBack by remember { mutableLongStateOf(0L) }
 
     fun refresh() { buckets = app.buckets.list(); selected = selected?.let { s -> buckets.firstOrNull { it.id == s.id } } }
@@ -170,13 +171,15 @@ private fun MainScreen(
         else -> Dashboard(
             runtime = runtime, buckets = buckets, gradient = gradient, timer = timer,
             onSettings = { page = Page.SETTINGS },
-            onTimer = { showTimer = true },
+            onTimer = { pendingStart = false; showTimer = true },
             onDebug = { showDebug = true },
             onToggleRuntime = { enabled ->
                 if (enabled) {
-                    val mins = timer.toLongOrNull()?.coerceIn(1, 10080) ?: 60
-                    ContextCompat.startForegroundService(context, Intent(context, NewtHostService::class.java).setAction(NewtHostService.ACTION_START).putExtra(NewtHostService.EXTRA_MINUTES, mins))
-                } else context.startService(Intent(context, NewtHostService::class.java).setAction(NewtHostService.ACTION_STOP))
+                    pendingStart = true
+                    showTimer = true
+                } else {
+                    context.startService(Intent(context, NewtHostService::class.java).setAction(NewtHostService.ACTION_STOP))
+                }
             },
             onToggleBucket = { bucket, enabled -> app.buckets.toggle(bucket.id, enabled); refresh() },
             onBucket = { selected = it },
@@ -185,14 +188,30 @@ private fun MainScreen(
         )
     }
 
-    if (showTimer) TimerDialog(timer, { timer = it }, { showTimer = false })
+    if (showTimer) TimerDialog(
+        timer = timer,
+        onApply = { minutes ->
+            timer = minutes?.toString()
+            showTimer = false
+            if (pendingStart) {
+                pendingStart = false
+                ContextCompat.startForegroundService(
+                    context,
+                    Intent(context, NewtHostService::class.java)
+                        .setAction(NewtHostService.ACTION_START)
+                        .putExtra(NewtHostService.EXTRA_MINUTES, minutes ?: 0L)
+                )
+            }
+        },
+        onDismiss = { pendingStart = false; showTimer = false }
+    )
     if (showDebug) DebugDialog(debugLines, onDismiss = { showDebug = false })
     if (showCreate) CreateBucketDialog(onDismiss = { showCreate = false }, onCreate = { app.buckets.create(it); refresh(); showCreate = false })
 }
 
 @Composable
 private fun Dashboard(
-    runtime: RuntimeState, buckets: List<Bucket>, gradient: List<Color>, timer: String,
+    runtime: RuntimeState, buckets: List<Bucket>, gradient: List<Color>, timer: String?,
     onSettings: () -> Unit, onTimer: () -> Unit, onDebug: () -> Unit, onToggleRuntime: (Boolean) -> Unit,
     onToggleBucket: (Bucket, Boolean) -> Unit, onBucket: (Bucket) -> Unit, onCreate: () -> Unit, hasSecret: Boolean
 ) {
@@ -231,7 +250,7 @@ private fun Dashboard(
 }
 
 @Composable
-private fun ConnectionHero(runtime: RuntimeState, gradient: List<Color>, timer: String, onTimer: () -> Unit, onDebug: () -> Unit) {
+private fun ConnectionHero(runtime: RuntimeState, gradient: List<Color>, timer: String?, onTimer: () -> Unit, onDebug: () -> Unit) {
     val status = when {
         runtime.connected -> stringResource(R.string.connected)
         runtime.running -> stringResource(R.string.connecting)
@@ -260,7 +279,11 @@ private fun ConnectionHero(runtime: RuntimeState, gradient: List<Color>, timer: 
                             status,
                             color = Color.White,
                             style = MaterialTheme.typography.headlineMedium,
-                            fontWeight = FontWeight.Bold
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.combinedClickable(
+                                onClick = {},
+                                onLongClick = onDebug
+                            )
                         )
                     }
                 }
@@ -270,27 +293,21 @@ private fun ConnectionHero(runtime: RuntimeState, gradient: List<Color>, timer: 
             }
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 GlassMetric(Icons.Rounded.Speed, stringResource(R.string.link_strength), if (runtime.linkMbps > 0) "${runtime.linkMbps} Mbps" else "—", Modifier.weight(1f))
-                GlassMetric(Icons.Rounded.Timer, stringResource(R.string.timer), runtime.remainingMinutes?.let { "$it min" } ?: "$timer min", Modifier.weight(1f))
+                GlassMetric(
+                    Icons.Rounded.Timer,
+                    stringResource(R.string.timer),
+                    runtime.remainingMinutes?.let { "$it min" } ?: timer?.let { "$it min" } ?: stringResource(R.string.timer_off),
+                    Modifier.weight(1f)
+                )
             }
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                FilledTonalButton(
-                    onClick = onTimer,
-                    colors = ButtonDefaults.filledTonalButtonColors(containerColor = Color.White.copy(alpha=.18f), contentColor = Color.White),
-                    modifier = Modifier.weight(1f)
-                ) {
-                    Icon(Icons.Rounded.Timer, null)
-                    Spacer(Modifier.width(8.dp))
-                    Text(stringResource(R.string.timer))
-                }
-                FilledTonalButton(
-                    onClick = onDebug,
-                    colors = ButtonDefaults.filledTonalButtonColors(containerColor = Color.White.copy(alpha=.18f), contentColor = Color.White),
-                    modifier = Modifier.weight(1f)
-                ) {
-                    Icon(Icons.Rounded.BugReport, null)
-                    Spacer(Modifier.width(8.dp))
-                    Text(stringResource(R.string.connection_debug))
-                }
+            FilledTonalButton(
+                onClick = onTimer,
+                colors = ButtonDefaults.filledTonalButtonColors(containerColor = Color.White.copy(alpha=.18f), contentColor = Color.White),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Icon(Icons.Rounded.Timer, null)
+                Spacer(Modifier.width(8.dp))
+                Text(stringResource(R.string.timer))
             }
         }
     }
@@ -507,6 +524,8 @@ private fun BucketDetail(bucket: Bucket, gradient: List<Color>, onBack: () -> Un
     var renaming by remember { mutableStateOf<File?>(null) }
     var deleting by remember { mutableStateOf<File?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
+    var showTrafficInspector by remember { mutableStateOf(false) }
+    val trafficRevision by TrafficInspectorBus.revision.collectAsStateWithLifecycle()
 
     fun refresh() {
         files = app.buckets.files(bucket.id)
@@ -594,7 +613,14 @@ private fun BucketDetail(bucket: Bucket, gradient: List<Color>, onBack: () -> Un
                                 onLongClick = { copyToClipboard(context, "port", bucket.port.toString()) }
                             )
                         )
-                        Text("${stringResource(R.string.traffic)} · ${formatBytes(bucket.bytesServed)}", color = Color.White)
+                        Text(
+                            "${stringResource(R.string.traffic)} · ${formatBytes(bucket.bytesServed)}",
+                            color = Color.White,
+                            modifier = Modifier.combinedClickable(
+                                onClick = {},
+                                onLongClick = { showTrafficInspector = true }
+                            )
+                        )
                     }
                 }
             }
@@ -652,6 +678,17 @@ private fun BucketDetail(bucket: Bucket, gradient: List<Color>, onBack: () -> Un
                 }
             }
         }
+    }
+
+    if (showTrafficInspector) {
+        TrafficInspectorDialog(
+            bucket = bucket,
+            events = remember(trafficRevision, bucket.id) { TrafficInspectorBus.list(bucket.id) },
+            enabled = TrafficInspectorBus.isEnabled(bucket.id),
+            onEnabled = { TrafficInspectorBus.setEnabled(bucket.id, it) },
+            onClear = { TrafficInspectorBus.clear(bucket.id) },
+            onDismiss = { showTrafficInspector = false }
+        )
     }
 
     renaming?.let { file ->
@@ -853,12 +890,99 @@ private fun DebugDialog(lines: List<String>, onDismiss: () -> Unit) {
 }
 
 @Composable
-private fun TimerDialog(timer: String, onTimer: (String) -> Unit, onDismiss: () -> Unit) {
-    var value by remember(timer) { mutableStateOf(timer) }
-    AlertDialog(onDismissRequest = onDismiss, shape = RoundedCornerShape(28.dp), icon = { Icon(Icons.Rounded.Timer, null) }, title = { Text(stringResource(R.string.timer)) },
-        text = { OutlinedTextField(value, { if (it.all(Char::isDigit)) value = it.take(6) }, label = { Text(stringResource(R.string.timer_minutes)) }, singleLine = true, shape = RoundedCornerShape(18.dp)) },
-        confirmButton = { Button(onClick = { onTimer(value.ifBlank { "60" }); onDismiss() }) { Text(stringResource(R.string.save)) } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) } })
+private fun TrafficInspectorDialog(
+    bucket: Bucket,
+    events: List<TrafficEvent>,
+    enabled: Boolean,
+    onEnabled: (Boolean) -> Unit,
+    onClear: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    val context = LocalContext.current
+    val logText = events.joinToString("\n\n") { it.asLine() }
+    val scrollState = rememberScrollState()
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        shape = RoundedCornerShape(28.dp),
+        icon = { Icon(Icons.Rounded.TravelExplore, null) },
+        title = { Text(stringResource(R.string.traffic_inspector)) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text(
+                    stringResource(R.string.traffic_inspector_note),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(stringResource(R.string.enable_traffic_inspector), modifier = Modifier.weight(1f))
+                    Switch(checked = enabled, onCheckedChange = onEnabled)
+                }
+                Surface(
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 180.dp, max = 420.dp),
+                    shape = RoundedCornerShape(18.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = .6f)
+                ) {
+                    androidx.compose.foundation.text.selection.SelectionContainer {
+                        Text(
+                            if (logText.isBlank()) stringResource(R.string.no_traffic_events) else logText,
+                            modifier = Modifier.fillMaxWidth().verticalScroll(scrollState).padding(12.dp),
+                            style = MaterialTheme.typography.bodySmall,
+                            fontFamily = FontFamily.Monospace
+                        )
+                    }
+                }
+            }
+        },
+        dismissButton = {
+            Row {
+                TextButton(onClick = onClear, enabled = events.isNotEmpty()) {
+                    Text(stringResource(R.string.clear))
+                }
+                TextButton(
+                    onClick = { copyToClipboard(context, "Traffic inspector", logText) },
+                    enabled = logText.isNotBlank()
+                ) {
+                    Text(stringResource(R.string.copy))
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.close)) } }
+    )
+}
+
+@Composable
+private fun TimerDialog(timer: String?, onApply: (Long?) -> Unit, onDismiss: () -> Unit) {
+    var value by remember(timer) { mutableStateOf(timer.orEmpty()) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        shape = RoundedCornerShape(28.dp),
+        icon = { Icon(Icons.Rounded.Timer, null) },
+        title = { Text(stringResource(R.string.timer)) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text(stringResource(R.string.timer_explanation), style = MaterialTheme.typography.bodySmall)
+                OutlinedTextField(
+                    value,
+                    { if (it.all(Char::isDigit)) value = it.take(5) },
+                    label = { Text(stringResource(R.string.timer_minutes)) },
+                    singleLine = true,
+                    shape = RoundedCornerShape(18.dp)
+                )
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = { onApply(value.toLongOrNull()?.coerceIn(1L, 10080L)) },
+                enabled = value.toLongOrNull()?.let { it in 1L..10080L } == true
+            ) { Text(stringResource(R.string.start_with_timer)) }
+        },
+        dismissButton = {
+            Row {
+                TextButton(onClick = { onApply(null) }) { Text(stringResource(R.string.no_timer)) }
+                TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) }
+            }
+        }
+    )
 }
 
 @Composable
