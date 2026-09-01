@@ -21,4 +21,14 @@
 <string name="delete_file_confirm">„%1$s“ wirklich löschen?</string>
 <string name="editor">Editor</string>
 <string name="copied">Kopiert</string>
+
+<string name="timer_off">Aus</string>
+<string name="timer_explanation">Wähle für diese Verbindung ausdrücklich eine Laufzeit oder starte ohne automatischen Stop-Timer.</string>
+<string name="start_with_timer">Mit Timer starten</string>
+<string name="no_timer">Ohne Timer</string>
+<string name="traffic_inspector">Traffic-Analyse</string>
+<string name="traffic_inspector_note">Versteckte, optionale Diagnose. Daten werden nur im Arbeitsspeicher gehalten, solange die Funktion aktiv ist. Erfasst werden Methode, Pfad, Socket-IP, vom Proxy gemeldete IP und User-Agent. Cookies, Authorization, Query-Strings und Request-Bodies werden nicht gespeichert. Die gemeldete Client-IP ist nur verlässlich, wenn der Proxy sie setzt.</string>
+<string name="enable_traffic_inspector">Detaillierte Traffic-Erfassung aktivieren</string>
+<string name="no_traffic_events">Keine Anfragen erfasst.</string>
+<string name="clear">Leeren</string>
 </resources>
