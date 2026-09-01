@@ -28,6 +28,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -793,6 +795,8 @@ private fun DeleteFileDialog(fileName: String, onDismiss: () -> Unit, onDelete: 
 private fun DebugDialog(lines: List<String>, onDismiss: () -> Unit) {
     val context = LocalContext.current
     val logText = lines.joinToString("\n")
+    val scrollState = rememberScrollState()
+
     AlertDialog(
         onDismissRequest = onDismiss,
         shape = RoundedCornerShape(28.dp),
@@ -809,7 +813,10 @@ private fun DebugDialog(lines: List<String>, onDismiss: () -> Unit) {
                     androidx.compose.foundation.text.selection.SelectionContainer {
                         Text(
                             if (logText.isBlank()) stringResource(R.string.connection_debug_empty) else logText,
-                            modifier = Modifier.fillMaxWidth().padding(12.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .verticalScroll(scrollState)
+                                .padding(12.dp),
                             style = MaterialTheme.typography.bodySmall,
                             fontFamily = FontFamily.Monospace
                         )

@@ -5,6 +5,7 @@ import sys
 root = Path(sys.argv[1])
 client = root / "websocket" / "client.go"
 config = root / "websocket" / "config.go"
+util = root / "util" / "util.go"
 
 client_text = client.read_text()
 
@@ -73,3 +74,55 @@ if old_prov not in config_text:
     raise SystemExit("provisioning HTTP client block not found")
 config_text = config_text.replace(old_prov, new_prov, 1)
 config.write_text(config_text)
+
+
+util_text = util.read_text()
+if '"os"' not in util_text:
+    import_marker = '"net"\n'
+    if import_marker not in util_text:
+        raise SystemExit("util net import marker not found")
+    util_text = util_text.replace(import_marker, import_marker + '\t"os"\n', 1)
+
+old_lookup = '''\t// Lookup IP addresses
+\tips, err := net.LookupIP(host)
+\tif err != nil {
+\t\treturn "", fmt.Errorf("DNS lookup failed: %v", err)
+\t}
+'''
+new_lookup = '''\t// Resolve through the Android-selected DNS server. Android's libc resolver may
+\t// point Go at ::1 even when no local DNS daemon is available.
+\tdnsServer := strings.TrimSpace(os.Getenv("DNS"))
+\tdnsHost := dnsServer
+\tdnsPort := "53"
+\tif h, p, splitErr := net.SplitHostPort(dnsServer); splitErr == nil {
+\t\tdnsHost = h
+\t\tdnsPort = p
+\t} else {
+\t\tdnsHost = strings.Trim(dnsServer, "[]")
+\t}
+\tcleanDNSHost := dnsHost
+\tif i := strings.LastIndex(cleanDNSHost, "%"); i >= 0 {
+\t\tcleanDNSHost = cleanDNSHost[:i]
+\t}
+\tdnsIP := net.ParseIP(cleanDNSHost)
+\tif dnsIP == nil || dnsIP.IsLoopback() || dnsIP.IsUnspecified() || dnsIP.IsMulticast() {
+\t\tdnsHost = "9.9.9.9"
+\t\tdnsPort = "53"
+\t}
+\tdnsAddr := net.JoinHostPort(dnsHost, dnsPort)
+\tresolver := &net.Resolver{
+\t\tPreferGo: true,
+\t\tDial: func(ctx context.Context, network, _ string) (net.Conn, error) {
+\t\t\td := net.Dialer{}
+\t\t\treturn d.DialContext(ctx, network, dnsAddr)
+\t\t},
+\t}
+\tips, err := resolver.LookupIP(context.Background(), "ip", host)
+\tif err != nil {
+\t\treturn "", fmt.Errorf("DNS lookup failed: %v", err)
+\t}
+'''
+if old_lookup not in util_text:
+    raise SystemExit("ResolveDomain lookup block not found")
+util_text = util_text.replace(old_lookup, new_lookup, 1)
+util.write_text(util_text)
