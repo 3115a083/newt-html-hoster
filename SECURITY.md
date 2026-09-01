@@ -14,7 +14,7 @@ The application:
 - stores the Newt secret encrypted with AES-256-GCM using a non-exportable Android Keystore key;
 - never intentionally logs the secret;
 - passes the secret to Newt through the child-process environment, not command-line arguments;
-- binds the static server only to 127.0.0.1;
+- binds every bucket server only to 127.0.0.1;
 - prevents canonical-path escape from a bucket directory;
 - disables Android backup and device-transfer extraction for private application data;
 - requires HTTPS for the Pangolin endpoint;
@@ -29,3 +29,12 @@ The Android server provides local resource-exhaustion controls. It cannot stop a
 ## Release signing
 
 Never commit an Android release keystore. Production self-updates require a stable signing key stored only in protected GitHub Actions secrets or another dedicated signing system.
+
+
+## Optional request diagnostics
+
+Detailed request diagnostics are disabled by default and exist only in process memory while explicitly enabled for a bucket. They intentionally exclude cookies, Authorization headers, query strings and request bodies.
+
+Proxy-reported client IP values are untrusted metadata unless the deployment's trusted proxy overwrites those headers. Do not treat them as authenticated identity.
+
+Operators are responsible for using request diagnostics in accordance with applicable privacy laws and policies.
