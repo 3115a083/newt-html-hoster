@@ -1,112 +1,182 @@
 # Newt HTML Hoster
 
-Android app for temporarily publishing static HTML sites and assets through an existing Pangolin/Newt setup.
+Android app for temporarily publishing static files from a phone through an existing Pangolin/Newt deployment.
 
-## Status
-
-Early security-focused test build. The app is intended for non-rooted Android devices and uses Newt's userspace netstack mode.
+The app runs a local HTTP server for each bucket and starts an embedded Android-targeted Newt client in userspace mode. No root access, Android VPN service, kernel WireGuard interface, or LAN-facing HTTP listener is required.
 
 ## Features
 
-- Multiple independent **buckets**.
-- Each bucket contains one HTML site plus arbitrary assets such as CSS, JavaScript, images, PDF, CSV, JSON and text files.
-- Buckets can be enabled and disabled without deleting content.
-- Assets can be replaced while hosting. The next request reads the updated file.
-- Built-in editor for HTML, CSS, JS, JSON, TXT, Markdown and CSV up to 2 MB.
+- Multiple independent static-site buckets.
+- One persistent local port per bucket, allocated from `8800..9799`.
+- Each bucket is served directly from `127.0.0.1:<port>`.
+- HTML, CSS, JavaScript, images, PDF, JSON, CSV, text and other static assets.
+- Built-in editor for common text formats up to 2 MiB.
+- Bucket enable/disable control without deleting content.
 - Per-bucket transferred-byte counters.
-- User-defined hosting timer from 1 minute up to 7 days.
-- Newt connection status, embedded Newt version and current Android link bandwidth shown in the UI.
-- Foreground service and persistent notification while Newt is running.
-- Partial wake lock only while hosting is active.
-- No runtime service and no wake lock while stopped.
-- English and German resources. Android chooses German when the system language is German, otherwise the base language is English.
-- Material You dynamic colors plus Ocean, Forest and Sunset palettes.
-- System, light and dark appearance modes.
-- Adaptive launcher icon combining a newt/salamander mark with a home symbol.
+- Optional connection timer. Starting a connection always requires an explicit choice between a duration and no timer.
+- Foreground service and partial wake lock only while Newt is active.
+- German and English UI.
+- Material You, light/dark mode and selectable color palettes.
+- Redacted connection diagnostics available by long-pressing the connection status.
+- Optional per-bucket request diagnostics for troubleshooting. This feature is disabled by default and stores data only in memory while enabled.
 
-## Security model
+## Requirements
 
-The static HTTP server listens **only on 127.0.0.1:8793**. It never binds to Wi-Fi, mobile data or 0.0.0.0.
-
-The Newt secret is entered once. It is encrypted with AES-256-GCM under a non-exportable Android Keystore key. The UI has no action that reads the secret back after saving. Android cloud backup and device-transfer extraction are disabled for app data.
-
-The Pangolin endpoint must use HTTPS. During enrollment the app performs normal Android TLS certificate validation and stores an SHA-256 SPKI pin for the server certificate key. Every later Newt start performs a new TLS handshake and fails closed if the pin changed.
-
-Newt is started from the APK native-library directory. The app forces userspace mode with `USE_NATIVE_INTERFACE=false`. It does not request root, TUN, VPN or kernel WireGuard privileges.
-
-The bucket server accepts only GET and HEAD. It canonicalizes paths to block `../` traversal and symlink escape, limits request headers, file size, connection concurrency and socket timeouts, disables directory listing, and sends browser hardening headers.
-
-See [SECURITY.md](SECURITY.md) and [docs/SECURITY_ARCHITECTURE.md](docs/SECURITY_ARCHITECTURE.md) for the threat model and limitations.
-
-## DDoS protection
-
-The Android process has local resource-exhaustion controls. Those controls cannot stop a volumetric attack that saturates the VPS or uplink before traffic reaches Newt.
-
-For internet exposure, configure rate limiting and filtering **upstream of Pangolin**, using the VPS firewall/provider, reverse proxy or CDN where appropriate.
-
-## Newt updates
-
-The Android CI workflow asks the official `fosrl/newt` GitHub Releases API for the newest release and embeds the official `newt_linux_arm64` and `newt_linux_amd64` binaries into each APK build. The workflow records SHA-256 hashes as build artifacts.
-
-Executable Newt code is **not** downloaded into Android writable storage and executed from there.
-
-Production self-update requires the entire APK to be rebuilt and signed with the same Android release signing key. The `Signed Newt Release` workflow checks Newt daily and publishes a new signed APK only when the embedded Newt version changes.
-
-For security, this workflow remains safely inactive until these repository Actions secrets exist:
-
-- `ANDROID_RELEASE_KEYSTORE_B64`
-- `ANDROID_RELEASE_STORE_PASSWORD`
-- `ANDROID_RELEASE_KEY_ALIAS`
-- `ANDROID_RELEASE_KEY_PASSWORD`
-
-Never commit the keystore or its passwords. Once configured, the app checks this repository's latest release, verifies SHA-256, then verifies that the candidate APK has exactly the same Android signing certificate as the installed app before opening the system installer.
+- Android device supported by the APK build.
+- Existing Pangolin deployment.
+- A Newt site ID and secret.
+- HTTPS Pangolin endpoint.
+- Pangolin resources that can target the local ports exposed by this app through Newt.
 
 ## Pangolin setup
 
-Create one Newt site in Pangolin and point the public resource to:
+Each bucket displays its local target in the app:
 
-```
-127.0.0.1:8793
-```
-
-Bucket URLs are:
-
-```
-https://your-public-host.example/b/<bucket-uuid>/
+```text
+127.0.0.1:<bucket-port>
 ```
 
-A bucket's root maps to its `index.html`.
+Example:
+
+```text
+127.0.0.1:8800
+```
+
+Configure the corresponding Pangolin resource to use that exact target port.
+
+The bucket root is served as `/` and resolves to `index.html`. Relative assets such as `/style.css` or `/images/logo.png` are served from the same bucket.
+
+Existing buckets keep their assigned port. New buckets receive a free local port automatically.
+
+## Security model
+
+### Local exposure
+
+Bucket servers bind explicitly to IPv4 loopback:
+
+```text
+127.0.0.1
+```
+
+They do not listen on Wi-Fi, mobile-data, LAN, or `0.0.0.0` interfaces.
+
+The local server accepts only `GET` and `HEAD`, limits request-header size, concurrent work, request rate, socket timeouts and maximum served file size. Paths are canonicalized before access to prevent traversal outside the bucket directory. Directory listing is disabled.
+
+### Credentials
+
+The Newt secret is encrypted using AES-256-GCM with a non-exportable key stored in Android Keystore.
+
+The UI does not expose the stored secret after enrollment. Android backup and device-transfer extraction are disabled for application data.
+
+Secrets, bearer values, tokens and authorization data are redacted from the in-app connection debug log.
+
+### Pangolin TLS pinning
+
+The configured Pangolin endpoint must use HTTPS.
+
+During credential enrollment, the app performs normal TLS certificate validation and stores an SHA-256 SPKI pin. Before every Newt start, the app performs another TLS handshake and fails closed if the server public-key pin changed.
+
+A legitimate Pangolin certificate/key rotation therefore requires re-enrollment in the app.
+
+### Newt runtime
+
+Newt runs as an embedded Android-targeted executable with:
+
+```text
+USE_NATIVE_INTERFACE=false
+```
+
+The Android build includes compatibility patches required for userspace DNS resolution on Android. Newt remains a separate upstream project and its applicable license terms must be respected.
+
+## Traffic diagnostics and privacy
+
+A hidden per-bucket traffic inspector can be opened by long-pressing the traffic value in the bucket detail screen.
+
+It is disabled by default.
+
+When explicitly enabled, it keeps at most a small in-memory ring buffer containing:
+
+- timestamp,
+- HTTP method,
+- path without query string,
+- local socket peer IP,
+- proxy-reported client IP when supplied through common forwarding headers,
+- User-Agent.
+
+It does **not** intentionally record:
+
+- cookies,
+- Authorization headers,
+- Newt credentials,
+- query strings,
+- request bodies.
+
+The data is not persisted and is discarded when the feature is disabled or the app process ends.
+
+A proxy-reported IP address is not inherently trustworthy. It is meaningful only when the trusted reverse proxy overwrites the relevant forwarding header.
+
+Use request diagnostics only where local law, policy, and user expectations permit it.
+
+## Connection timer
+
+There is no automatic default timer.
+
+When starting the tunnel, the user must explicitly choose either:
+
+- a duration from 1 to 10080 minutes, or
+- no automatic stop timer.
+
+Disconnecting manually always stops Newt and all local bucket servers.
+
+## Public-content warning
+
+Files placed in enabled buckets can become publicly reachable through the configured Pangolin resource.
+
+Only publish content you intend to expose. Static HTML may contain JavaScript and other active browser content.
+
+The built-in server adds browser-hardening headers, but this does not make untrusted HTML safe to execute.
+
+## DDoS and abuse protection
+
+The Android process includes local resource limits, but it cannot prevent volumetric attacks that saturate the Pangolin host, VPS, provider uplink, or mobile connection before traffic reaches the phone.
+
+For internet-facing deployments, apply appropriate filtering and rate limiting upstream of the device.
 
 ## Build
 
-GitHub Actions builds a debug APK on every push to `main`.
+GitHub Actions builds the Android-targeted Newt runtime and the Android APK.
 
-Locally:
+Local Android assembly:
 
 ```bash
 gradle :app:assembleDebug
 ```
 
-The build expects the Newt executables at:
+The Android build expects Newt native executables under the ABI-specific `jniLibs` directories. CI prepares these automatically.
 
-```
-app/src/main/jniLibs/arm64-v8a/libnewt.so
-app/src/main/jniLibs/x86_64/libnewt.so
-```
+Debug builds are debug-signed and are intended for testing. Public production distribution should use a controlled release signing key and a reproducible release process.
 
-The CI workflow downloads those files automatically.
+## Security reporting
 
-## Important limitations
+Please report suspected vulnerabilities privately when possible rather than publishing credentials, private endpoints, full debug logs, or exploit details in a public issue.
 
-- The test APK is debug-signed. It is not a production self-updating release.
-- Android cannot protect app secrets against a fully compromised/rooted OS or an attacker controlling an already unlocked device.
-- SPKI preflight pinning adds a fail-closed check before Newt starts. Newt still performs its own standard TLS validation for its control connection.
-- Newt is AGPLv3/commercial dual licensed upstream. This project distributes the unmodified Newt executable as a separate process and must preserve the applicable Newt licensing obligations.
-- Public HTML can contain active JavaScript. Only host content you trust.
+See:
 
-## Upstream
+- [SECURITY.md](SECURITY.md)
+- [Security architecture](docs/SECURITY_ARCHITECTURE.md)
+
+## Limitations
+
+- A rooted or otherwise compromised Android OS can defeat application-level secret protection.
+- TLS pinning intentionally fails after a server-key rotation until credentials are enrolled again.
+- Client IP information in traffic diagnostics depends on trusted proxy forwarding behavior.
+- Device identification is limited to information voluntarily exposed by the HTTP client, primarily the User-Agent. The app does not fingerprint clients beyond captured request metadata.
+- The app does not provide upstream DDoS protection.
+- Newt and Pangolin are external upstream projects.
+
+## Upstream projects
 
 - Newt: `fosrl/newt`
 - Pangolin: `fosrl/pangolin`
 
-Newt is a separate upstream project and is not maintained by this repository.
+This repository is not the upstream Newt or Pangolin project.
