@@ -36,13 +36,12 @@ class NewtHostService : Service() {
         const val ACTION_START = "dev.newthoster.START"
         const val ACTION_STOP = "dev.newthoster.STOP"
         const val EXTRA_MINUTES = "minutes"
-        const val PORT = 8793
         private const val CHANNEL = "newt_runtime"
         private const val NOTIFICATION_ID = 9115
     }
 
     private var process: Process? = null
-    private var server: SecureStaticServer? = null
+    private val servers = mutableMapOf<String, SecureStaticServer>()
     private var wakeLock: PowerManager.WakeLock? = null
     private val worker = Executors.newSingleThreadExecutor()
     private val scheduler = Executors.newSingleThreadScheduledExecutor()
@@ -104,7 +103,7 @@ class NewtHostService : Service() {
                 RuntimeDebugBus.add("TLS pin verified")
                 val runtimeDir = File(filesDir, "newt-runtime").apply { mkdirs() }
                 val healthFile = File(runtimeDir, "healthy").apply { delete() }
-                server = SecureStaticServer(app.buckets, PORT).also { it.start() }
+                syncBucketServers(app.buckets)
                 acquireWakeLock()
 
                 val binary = File(applicationInfo.nativeLibraryDir, "libnewt.so")
@@ -160,6 +159,7 @@ class NewtHostService : Service() {
 
                 stopTask = scheduler.schedule({ if (!stopping.get()) stopRuntime() }, minutes, TimeUnit.MINUTES)
                 healthTask = scheduler.scheduleAtFixedRate({
+                    syncBucketServers(app.buckets)
                     val procAlive = process?.isAlive == true
                     val connected = procAlive && healthFile.isFile
                     val remaining = ((deadlineMillis - System.currentTimeMillis()).coerceAtLeast(0L) + 59_999L) / 60_000L
@@ -198,6 +198,37 @@ class NewtHostService : Service() {
                 }
             }
         }
+    }
+
+    @Synchronized
+    private fun syncBucketServers(store: BucketStore) {
+        val buckets = store.list()
+        val ids = buckets.mapTo(mutableSetOf()) { it.id }
+
+        val removed = servers.keys.filter { it !in ids }
+        removed.forEach { id ->
+            runCatching { servers.remove(id)?.stop() }
+            RuntimeDebugBus.add("Stopped bucket server: " + id)
+        }
+
+        buckets.forEach { bucket ->
+            if (servers.containsKey(bucket.id)) return@forEach
+            val server = SecureStaticServer(store, bucket.id, bucket.port)
+            runCatching { server.start() }
+                .onSuccess {
+                    servers[bucket.id] = server
+                    RuntimeDebugBus.add("Bucket " + bucket.name + " listening on 127.0.0.1:" + bucket.port)
+                }
+                .onFailure {
+                    RuntimeDebugBus.add("Bucket server failed on port " + bucket.port + ": " + (it.message ?: it.javaClass.simpleName))
+                }
+        }
+    }
+
+    @Synchronized
+    private fun stopBucketServers() {
+        servers.values.forEach { runCatching { it.stop() } }
+        servers.clear()
     }
 
     private fun currentDnsServer(): String? {
@@ -254,8 +285,7 @@ class NewtHostService : Service() {
             if (process?.waitFor(2, TimeUnit.SECONDS) == false) process?.destroyForcibly()
         }
         process = null
-        server?.stop()
-        server = null
+        stopBucketServers()
         if (wakeLock?.isHeld == true) wakeLock?.release()
         wakeLock = null
         File(filesDir, "newt-runtime/healthy").delete()
@@ -303,7 +333,7 @@ class NewtHostService : Service() {
         stopTask?.cancel(true)
         healthTask?.cancel(true)
         runCatching { process?.destroyForcibly() }
-        runCatching { server?.stop() }
+        stopBucketServers()
         if (wakeLock?.isHeld == true) runCatching { wakeLock?.release() }
         worker.shutdownNow()
         scheduler.shutdownNow()

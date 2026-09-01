@@ -5,11 +5,24 @@ import android.net.Uri
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
+import java.net.InetAddress
+import java.net.ServerSocket
 import java.util.UUID
 
-data class Bucket(val id: String, val name: String, val enabled: Boolean, val bytesServed: Long, val createdAt: Long)
+data class Bucket(
+    val id: String,
+    val name: String,
+    val enabled: Boolean,
+    val bytesServed: Long,
+    val createdAt: Long,
+    val port: Int
+)
 
 class BucketStore(private val context: Context) {
+    companion object {
+        const val MIN_BUCKET_PORT = 8800
+        const val MAX_BUCKET_PORT = 9799
+    }
     private val prefs = context.getSharedPreferences("buckets", Context.MODE_PRIVATE)
     private val root = File(context.filesDir, "buckets").apply { mkdirs() }
     private val lock = Any()
@@ -24,12 +37,14 @@ class BucketStore(private val context: Context) {
     fun create(name: String): Bucket = synchronized(lock) {
         flushTrafficLocked()
         val safeName = name.trim().ifEmpty { "Bucket" }.take(80)
-        val bucket = Bucket(UUID.randomUUID().toString(), safeName, true, 0, System.currentTimeMillis())
+        val stored = readStored()
+        val port = allocatePort(stored.mapTo(mutableSetOf()) { it.port })
+        val bucket = Bucket(UUID.randomUUID().toString(), safeName, true, 0, System.currentTimeMillis(), port)
         directory(bucket.id).mkdirs()
         File(directory(bucket.id), "index.html").writeText(
             "<!doctype html><html><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>${escapeHtml(safeName)}</title></head><body><h1>${escapeHtml(safeName)}</h1></body></html>"
         )
-        saveStored(readStored() + bucket)
+        saveStored(stored + bucket)
         bucket
     }
 
@@ -156,13 +171,48 @@ class BucketStore(private val context: Context) {
 
     private fun readStored(): List<Bucket> {
         val arr = JSONArray(prefs.getString("items", "[]") ?: "[]")
-        return buildList {
+        val raw = buildList {
             for (i in 0 until arr.length()) {
                 val o = arr.getJSONObject(i)
-                add(Bucket(o.getString("id"), o.getString("name"), o.optBoolean("enabled", true), o.optLong("bytesServed", 0), o.optLong("createdAt", 0)))
+                add(
+                    Bucket(
+                        o.getString("id"),
+                        o.getString("name"),
+                        o.optBoolean("enabled", true),
+                        o.optLong("bytesServed", 0),
+                        o.optLong("createdAt", 0),
+                        o.optInt("port", 0)
+                    )
+                )
             }
         }
+
+        val used = mutableSetOf<Int>()
+        var changed = false
+        val migrated = raw.map { bucket ->
+            if (bucket.port in MIN_BUCKET_PORT..MAX_BUCKET_PORT && bucket.port !in used) {
+                used += bucket.port
+                bucket
+            } else {
+                val replacement = allocatePort(used)
+                used += replacement
+                changed = true
+                bucket.copy(port = replacement)
+            }
+        }
+        if (changed) saveStored(migrated)
+        return migrated
     }
+
+    private fun allocatePort(used: Set<Int>): Int =
+        (MIN_BUCKET_PORT..MAX_BUCKET_PORT).firstOrNull { it !in used && isPortAvailable(it) }
+            ?: error("No free local bucket port available")
+
+    private fun isPortAvailable(port: Int): Boolean =
+        runCatching {
+            ServerSocket(port, 1, InetAddress.getLoopbackAddress()).use { }
+            true
+        }.getOrDefault(false)
 
     private fun flushTrafficLocked() {
         if (pendingTraffic.isEmpty()) {
@@ -184,6 +234,7 @@ class BucketStore(private val context: Context) {
                 put("enabled", it.enabled)
                 put("bytesServed", it.bytesServed)
                 put("createdAt", it.createdAt)
+                put("port", it.port)
             })
         }
         prefs.edit().putString("items", arr.toString()).apply()

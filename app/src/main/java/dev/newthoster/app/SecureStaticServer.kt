@@ -15,7 +15,8 @@ import java.util.concurrent.atomic.AtomicBoolean
 
 class SecureStaticServer(
     private val store: BucketStore,
-    private val port: Int = 8793
+    private val bucketId: String,
+    private val port: Int
 ) {
     private val running = AtomicBoolean(false)
     private var serverSocket: ServerSocket? = null
@@ -79,16 +80,18 @@ class SecureStaticServer(
             val decoded = runCatching { URLDecoder.decode(pathOnly, "UTF-8") }.getOrElse {
                 return writeStatus(s, 400, "Bad Request")
             }
-            val segments = decoded.trim('/').split('/').filter { it.isNotBlank() }
-            if (segments.size < 2 || segments[0] != "b") return writeStatus(s, 404, "Not Found")
-            val bucketId = segments[1]
             val bucket = store.list().firstOrNull { it.id == bucketId } ?: return writeStatus(s, 404, "Not Found")
             if (!bucket.enabled) return writeStatus(s, 404, "Not Found")
 
-            var rel = segments.drop(2).joinToString("/")
+            var rel = decoded.trimStart('/')
             if (rel.isBlank()) rel = "index.html"
-            val file = runCatching { store.resolveSafe(bucketId, rel) }.getOrElse {
+            var file = runCatching { store.resolveSafe(bucketId, rel) }.getOrElse {
                 return writeStatus(s, 403, "Forbidden")
+            }
+            if (file.isDirectory) {
+                file = runCatching { store.resolveSafe(bucketId, rel.trimEnd('/') + "/index.html") }.getOrElse {
+                    return writeStatus(s, 403, "Forbidden")
+                }
             }
             if (!file.isFile) return writeStatus(s, 404, "Not Found")
             if (file.length() > 100L * 1024 * 1024) return writeStatus(s, 413, "Payload Too Large")

@@ -295,7 +295,7 @@ private fun BucketCard(bucket: Bucket, gradient: List<Color>, onClick: () -> Uni
     val context = LocalContext.current
     val app = context.applicationContext as HosterApp
     val files = remember(bucket.id, bucket.bytesServed) { app.buckets.files(bucket.id) }
-    val target = "127.0.0.1:${NewtHostService.PORT}/b/${bucket.id}/"
+    val target = "127.0.0.1:${bucket.port}"
     ElevatedCard(onClick = onClick, shape = RoundedCornerShape(26.dp), modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -310,9 +310,9 @@ private fun BucketCard(bucket: Bucket, gradient: List<Color>, onClick: () -> Uni
                 SoftMetric(stringResource(R.string.traffic), formatBytes(bucket.bytesServed), Modifier.weight(1f))
                 SoftMetric(
                     stringResource(R.string.port),
-                    NewtHostService.PORT.toString(),
+                    bucket.port.toString(),
                     Modifier.weight(1f),
-                    onLongClick = { copyToClipboard(context, "port", NewtHostService.PORT.toString()) }
+                    onLongClick = { copyToClipboard(context, "port", bucket.port.toString()) }
                 )
             }
             Column {
@@ -560,7 +560,7 @@ private fun BucketDetail(bucket: Bucket, gradient: List<Color>, onBack: () -> Un
                                 onChanged()
                             }
                         }
-                        val target = "127.0.0.1:${NewtHostService.PORT}/b/${bucket.id}/"
+                        val target = "127.0.0.1:${bucket.port}"
                         Text(
                             target,
                             color = Color.White.copy(alpha = .85f),
@@ -572,12 +572,12 @@ private fun BucketDetail(bucket: Bucket, gradient: List<Color>, onBack: () -> Un
                             )
                         )
                         Text(
-                            "${stringResource(R.string.port)}: ${NewtHostService.PORT}",
+                            "${stringResource(R.string.port)}: ${bucket.port}",
                             color = Color.White.copy(alpha = .85f),
                             style = MaterialTheme.typography.bodySmall,
                             modifier = Modifier.combinedClickable(
                                 onClick = {},
-                                onLongClick = { copyToClipboard(context, "port", NewtHostService.PORT.toString()) }
+                                onLongClick = { copyToClipboard(context, "port", bucket.port.toString()) }
                             )
                         )
                         Text("${stringResource(R.string.traffic)} · ${formatBytes(bucket.bytesServed)}", color = Color.White)
