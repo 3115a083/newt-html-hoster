@@ -59,7 +59,7 @@ jobs:
       - name: Assemble
         run: gradle --no-daemon :app:assembleDebug
       - name: Upload APK
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: newt-html-hoster-debug
           path: |
