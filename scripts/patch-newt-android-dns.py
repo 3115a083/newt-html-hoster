@@ -65,7 +65,6 @@ new_ws = '\tdialerValue := *websocket.DefaultDialer\n\tdialer := &dialerValue\n\
 if old_ws not in client_text:
     raise SystemExit("websocket dialer block not found")
 client_text = client_text.replace(old_ws, new_ws, 1)
-client.write_text(client_text)
 
 config_text = config.read_text()
 old_prov = '''\thttpClient := &http.Client{}\n\tif tlsCfg != nil {\n\t\thttpClient.Transport = &http.Transport{TLSClientConfig: tlsCfg}\n\t}\n'''
@@ -73,8 +72,6 @@ new_prov = '''\ttransport := http.DefaultTransport.(*http.Transport).Clone()\n\t
 if old_prov not in config_text:
     raise SystemExit("provisioning HTTP client block not found")
 config_text = config_text.replace(old_prov, new_prov, 1)
-config.write_text(config_text)
-
 
 util_text = util.read_text()
 if '"os"' not in util_text:
@@ -89,7 +86,7 @@ old_lookup = '''\t// Lookup IP addresses
 \t\treturn "", fmt.Errorf("DNS lookup failed: %v", err)
 \t}
 '''
-new_lookup = '''\t// Resolve through the Android-selected DNS server. Android's libc resolver may
+dns_setup = '''\t// Resolve through the Android-selected DNS server. Android's libc resolver may
 \t// point Go at ::1 even when no local DNS daemon is available.
 \tdnsServer := strings.TrimSpace(os.Getenv("DNS"))
 \tdnsHost := dnsServer
@@ -110,7 +107,8 @@ new_lookup = '''\t// Resolve through the Android-selected DNS server. Android's 
 \t\tdnsPort = "53"
 \t}
 \tdnsAddr := net.JoinHostPort(dnsHost, dnsPort)
-\tresolver := &net.Resolver{
+'''
+new_lookup = dns_setup + '''\tresolver := &net.Resolver{
 \t\tPreferGo: true,
 \t\tDial: func(ctx context.Context, network, _ string) (net.Conn, error) {
 \t\t\td := net.Dialer{}
@@ -122,7 +120,27 @@ new_lookup = '''\t// Resolve through the Android-selected DNS server. Android's 
 \t\treturn "", fmt.Errorf("DNS lookup failed: %v", err)
 \t}
 '''
-if old_lookup not in util_text:
+modern_lookup = '''\tif len(publicDNS) == 0 {
+\t\treturn net.LookupIP(host)
+\t}
+'''
+if old_lookup in util_text:
+    util_text = util_text.replace(old_lookup, new_lookup, 1)
+elif modern_lookup in util_text:
+    # Route the empty-list case through upstream's resolver and keep its platform fallback.
+    dns_setup_in_block = "".join(
+        "\t" + line for line in dns_setup.splitlines(keepends=True)
+    )
+    modern_replacement = (
+        "\tif len(publicDNS) == 0 {\n"
+        + dns_setup_in_block
+        + "\t\tpublicDNS = []string{dnsAddr}\n"
+        + "\t}\n"
+    )
+    util_text = util_text.replace(modern_lookup, modern_replacement, 1)
+else:
     raise SystemExit("ResolveDomain lookup block not found")
-util_text = util_text.replace(old_lookup, new_lookup, 1)
+
+client.write_text(client_text)
+config.write_text(config_text)
 util.write_text(util_text)
